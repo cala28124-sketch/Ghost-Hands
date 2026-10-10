@@ -1,0 +1,2 @@
+C:\Users\paulm\Projects\Ghost-Hands\unity\Library\PramData\AndroidApplicationController\Cache\com.UnityTechnologies.com.unity.template.urpblank\gradle-project\unityLibrary\src\main\cpp\CMakeLists.txt
+C:\Users\paulm\Projects\Ghost-Hands\unity\Library\PramData\AndroidApplicationController\Cache\com.UnityTechnologies.com.unity.template.urpblank\gradle-project\unityLibrary\src\main\cpp\GameActivity\CMakeLists.txt

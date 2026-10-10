@@ -58,7 +58,7 @@ MonoBehaviour:
     - line: '|   defaultCursor: {instanceID: 0}'
     - line: '|   cursorHotspot: {x: 0, y: 0}'
     - line: '|   m_SplashScreenBackgroundColor: {r: 0.13725491, g: 0.12156863, b: 0.1254902, a: 1}'
-    - line: '|   m_ShowUnitySplashScreen: 1'
+    - line: '|   m_ShowUnitySplashScreen: 0'
     - line: '|   m_ShowUnitySplashLogo: 1'
     - line: '|   m_SplashScreenOverlayOpacity: 1'
     - line: '|   m_SplashScreenAnimation: 1'
@@ -193,6 +193,9 @@ MonoBehaviour:
     - line: '|   bundleVersion: 0.1.0'
     - line: '|   preloadedAssets:'
     - line: '|   - {fileID: 11400000, guid: a8cd84a7c3a25c74d8698e927f3e4780, type: 2}'
+    - line: '|   - {fileID: 1863745441073153008, guid: acab409ef94bc0343969e8424a892bc8, type: 2}'
+    - line: '|   - {fileID: -7859671501120103691, guid: 6bb10c44fea400b4b9dc251f8a09db47, type: 2}'
+    - line: '|   - {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}'
     - line: '|   metroInputSource: 0'
     - line: '|   wsaTransparentSwapchain: 0'
     - line: '|   xboxOneDisableKinectGpuReservation: 1'
@@ -472,66 +475,6 @@ MonoBehaviour:
     - line: '|       m_Width: 81'
     - line: '|       m_Height: 81'
     - line: '|       m_Kind: 2'
-    - line: '|       m_SubKind: '
-    - line: '|     - m_Textures: []'
-    - line: '|       m_Width: 192'
-    - line: '|       m_Height: 192'
-    - line: '|       m_Kind: 1'
-    - line: '|       m_SubKind: '
-    - line: '|     - m_Textures: []'
-    - line: '|       m_Width: 144'
-    - line: '|       m_Height: 144'
-    - line: '|       m_Kind: 1'
-    - line: '|       m_SubKind: '
-    - line: '|     - m_Textures: []'
-    - line: '|       m_Width: 96'
-    - line: '|       m_Height: 96'
-    - line: '|       m_Kind: 1'
-    - line: '|       m_SubKind: '
-    - line: '|     - m_Textures: []'
-    - line: '|       m_Width: 72'
-    - line: '|       m_Height: 72'
-    - line: '|       m_Kind: 1'
-    - line: '|       m_SubKind: '
-    - line: '|     - m_Textures: []'
-    - line: '|       m_Width: 48'
-    - line: '|       m_Height: 48'
-    - line: '|       m_Kind: 1'
-    - line: '|       m_SubKind: '
-    - line: '|     - m_Textures: []'
-    - line: '|       m_Width: 36'
-    - line: '|       m_Height: 36'
-    - line: '|       m_Kind: 1'
-    - line: '|       m_SubKind: '
-    - line: '|     - m_Textures: []'
-    - line: '|       m_Width: 192'
-    - line: '|       m_Height: 192'
-    - line: '|       m_Kind: 0'
-    - line: '|       m_SubKind: '
-    - line: '|     - m_Textures: []'
-    - line: '|       m_Width: 144'
-    - line: '|       m_Height: 144'
-    - line: '|       m_Kind: 0'
-    - line: '|       m_SubKind: '
-    - line: '|     - m_Textures: []'
-    - line: '|       m_Width: 96'
-    - line: '|       m_Height: 96'
-    - line: '|       m_Kind: 0'
-    - line: '|       m_SubKind: '
-    - line: '|     - m_Textures: []'
-    - line: '|       m_Width: 72'
-    - line: '|       m_Height: 72'
-    - line: '|       m_Kind: 0'
-    - line: '|       m_SubKind: '
-    - line: '|     - m_Textures: []'
-    - line: '|       m_Width: 48'
-    - line: '|       m_Height: 48'
-    - line: '|       m_Kind: 0'
-    - line: '|       m_SubKind: '
-    - line: '|     - m_Textures: []'
-    - line: '|       m_Width: 36'
-    - line: '|       m_Height: 36'
-    - line: '|       m_Kind: 0'
     - line: '|       m_SubKind: '
     - line: '|   - m_BuildTarget: tvOS'
     - line: '|     m_Icons:'
@@ -1008,7 +951,7 @@ MonoBehaviour:
     - rid: 8833133600990035971
       type: {class: AndroidPlatformBuildSettings, ns: UnityEditor.Android, asm: UnityEditor.Android.Extensions}
       data:
-        m_Development: 0
+        m_Development: 1
         m_ConnectProfiler: 0
         m_BuildWithDeepProfilingSupport: 0
         m_BuildWithCodeCoverage: 0
@@ -1029,7 +972,7 @@ MonoBehaviour:
         m_DebugSymbolLevel: 1
         m_DebugSymbolFormat: 5
         m_CurrentDeploymentTargetId: 340YC10GBM1P2N
-        m_BuildType: 2
+        m_BuildType: 1
         m_LinkTimeOptimization: 0
         m_BuildAppBundle: 0
         m_ProfileableShell: 0
