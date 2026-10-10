@@ -16,7 +16,13 @@ const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 
 const BUCKET = 'videos';
 const LINK_SECONDS = 15 * 60;
-const s3 = new S3Client({ forcePathStyle: true }); // keys, endpoint, and region come from AWS_* in .env.local
+// Keys, endpoint, and region come from AWS_* in .env.local. Neon requires path-style addresses.
+// Checksums only when required: otherwise the SDK signs an empty-body checksum into upload links.
+const s3 = new S3Client({
+  forcePathStyle: true,
+  requestChecksumCalculation: 'WHEN_REQUIRED',
+  responseChecksumValidation: 'WHEN_REQUIRED',
+});
 
 // Unique, safe name inside the bucket: uploads/<uuid>-<cleaned file name>.
 // Stored in the videos table's storage_key column.

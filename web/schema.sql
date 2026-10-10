@@ -12,13 +12,15 @@ create table if not exists lessons (
   updated_at     timestamptz not null default now()
 );
 
--- One row per uploaded expert video. Dominick's script moves it pending → processing → done/failed.
+-- One row per uploaded expert video.
+-- uploading → pending (server confirmed the file is in storage) → processing (Dominick's script) → done/failed.
 create table if not exists videos (
   id           serial primary key,
   file_name    text not null,
   storage_key  text not null unique,
-  status       text not null default 'pending'
-               check (status in ('pending', 'processing', 'done', 'failed')),
+  status       text not null default 'uploading'
+               constraint videos_status_check
+               check (status in ('uploading', 'pending', 'processing', 'done', 'failed')),
   lesson_id    text references lessons(lesson_id) on delete set null,
   error        text,
   uploaded_at  timestamptz not null default now()
@@ -48,3 +50,11 @@ create table if not exists step_results (
 -- Speeds up the two lookups the server does most.
 create index if not exists videos_status_idx on videos (status);
 create index if not exists step_results_session_idx on step_results (session_id);
+
+-- Changes after the first version (safe to re-run; bring an existing database up to date).
+
+-- Videos start as 'uploading' until the server confirms the file is in storage.
+alter table videos drop constraint if exists videos_status_check;
+alter table videos add constraint videos_status_check
+  check (status in ('uploading', 'pending', 'processing', 'done', 'failed'));
+alter table videos alter column status set default 'uploading';

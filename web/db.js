@@ -22,6 +22,7 @@ const pool = new Pool({
   max: 5,
   idleTimeoutMillis: 30_000,
   connectionTimeoutMillis: 5_000, // fail fast so the server can fall back to local lesson files
+  query_timeout: 5_000,           // also give up on a query stuck on a dead connection (e.g. wifi changed)
 });
 
 // Neon drops idle connections when it scales to zero; log instead of crashing.

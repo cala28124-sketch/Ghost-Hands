@@ -1,5 +1,5 @@
 // lessons.js: saves lessons to Neon. The only code that writes to the lessons table.
-// Used by seed.js now and by the server's POST /lessons in Phase 3.
+// Used by seed.js and by the server's POST /lessons.
 // Usage: const { saveLesson } = require('./lessons'); await saveLesson(lesson) → { ok, errors[] }
 
 const db = require('./db');

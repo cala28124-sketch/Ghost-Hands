@@ -21,7 +21,17 @@ function validateLesson(lesson) {
     }
   }
 
-  // JSON Schema can't express this: every hand used in a step must be listed in the lesson's "hands".
+  // JSON Schema can't express this: step ids must be unique (results are stored per stepId).
+  if (lesson && Array.isArray(lesson.steps)) {
+    const seen = new Set();
+    lesson.steps.forEach((step, i) => {
+      if (!step || typeof step.id !== 'string') return;
+      if (seen.has(step.id)) errors.push(`/steps/${i}/id "${step.id}" is used by an earlier step`);
+      seen.add(step.id);
+    });
+  }
+
+  // JSON Schema can't express this either: every hand used in a step must be listed in the lesson's "hands".
   if (lesson && Array.isArray(lesson.hands) && Array.isArray(lesson.steps)) {
     lesson.steps.forEach((step, i) => {
       if (!step || typeof step.hands !== 'object' || step.hands === null) return;

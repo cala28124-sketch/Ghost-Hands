@@ -1,5 +1,6 @@
 // server.js: the Ghost Hands lesson server (Express 5), run on the laptop.
 // Headset: GET /lessons, GET /lessons/:id, POST /results. Dominick's script and the webpage: POST /lessons.
+// Videos: the webpage uploads through POST /videos (+ /uploaded); Dominick's script uses GET /videos and PATCH /videos/:id.
 // Lessons fall back to shared/lessons/*.json when Neon is unreachable.
 //
 // ── START THE SERVER ─────────────────────────────────────────────────────────
@@ -38,19 +39,38 @@
 //         "steps":[{"stepId":"step-01","timeToMatchMs":2400,"retries":0,"trackingLosses":1}]}'
 //     → 201 {"ok":true,"sessionId":1}   (tester, device, recallPassed are optional)
 //
+//   Upload a video (the webpage does these 3 calls):
+//     curl -X POST -H "Content-Type: application/json" http://localhost:3000/videos \
+//          --data '{"fileName":"cube.mp4","contentType":"video/mp4"}'
+//     → 201 {"videoId":1,"uploadUrl":"https://...","contentType":"video/mp4"}
+//     curl -X PUT -H "Content-Type: video/mp4" --data-binary @cube.mp4 "<uploadUrl>"     (straight to Neon storage)
+//     curl -X POST http://localhost:3000/videos/1/uploaded
+//     → {"ok":true,"videoId":1,"status":"pending","size":48211234}
+//
+//   Process videos (Dominick's script):
+//     curl "http://localhost:3000/videos?status=pending"
+//     → [{"videoId":1,"fileName":"cube.mp4","status":"pending",...,"downloadUrl":"https://... (15 min)"}]
+//     curl -X PATCH -H "Content-Type: application/json" http://localhost:3000/videos/1 --data '{"status":"processing"}'
+//     then either POST /lessons?videoId=1 with the lesson (→ video "done")
+//     or   --data '{"status":"failed","error":"no hands found"}'
+//
 //   Every error answer has the same shape: {"errors":["..."]}.
-//   400 = fix what you sent · 404 = not found · 503 = database problem, try again.
+//   400 = fix what you sent · 404 = not found · 409 = wrong state (e.g. not uploaded yet)
+//   502 = video storage problem, try again · 503 = database problem, try again.
 
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const express = require('express');
 const db = require('./db');
+const storage = require('./storage');
 const { saveLesson } = require('./lessons');
 const { validateLesson } = require('./validate');
 
 const PORT = Number(process.env.PORT) || 3000;
 const LESSONS_DIR = path.join(__dirname, '..', 'shared', 'lessons');
+const VIDEO_TYPES = ['video/mp4', 'video/quicktime', 'video/webm'];
+const VIDEO_STATUSES = ['uploading', 'pending', 'processing', 'done', 'failed'];
 
 // Fallback source when Neon is down: the valid lesson files on disk.
 function loadLocalLessons() {
@@ -64,6 +84,26 @@ function loadLocalLessons() {
 
 function summary(lesson) {
   return { lessonId: lesson.lessonId, title: lesson.title, hands: lesson.hands, stepCount: lesson.steps.length };
+}
+
+// "5" → 5; anything that isn't a whole number in the database's id range → null.
+function parseId(raw) {
+  return /^\d{1,10}$/.test(raw) && Number(raw) <= 2147483647 ? Number(raw) : null;
+}
+
+// Which status a video may move to from which (PATCH /videos/:id). 'done' only via POST /lessons?videoId=.
+const VIDEO_MOVES = {
+  processing: ['pending'],                // script claims a queued video
+  failed: ['pending', 'processing'],      // script gives up, with a reason
+  pending: ['failed', 'processing'],      // retry a failed video, or release a claim
+};
+
+// A videos table row → the shape callers get.
+function videoInfo(v) {
+  return {
+    videoId: v.id, fileName: v.file_name, status: v.status, lessonId: v.lesson_id,
+    error: v.error, uploadedAt: v.uploaded_at,
+  };
 }
 
 const app = express();
@@ -107,21 +147,22 @@ app.get('/lessons/:id', async (req, res) => {
 
 // Save a lesson (Dominick's script, webpage). ?videoId=5 also marks that video done.
 app.post('/lessons', async (req, res) => {
-  const videoId = req.query.videoId;
-  if (videoId !== undefined && !/^\d+$/.test(videoId)) {
-    return res.status(400).json({ errors: ['videoId must be a whole number'] });
-  }
+  const videoId = req.query.videoId === undefined ? undefined : parseId(req.query.videoId);
+  if (videoId === null) return res.status(400).json({ errors: ['videoId must be a whole number'] });
 
   const result = await saveLesson(req.body);
   if (!result.ok) return res.status(400).json({ errors: result.errors });
 
-  if (videoId) {
-    await db.query(
-      "update videos set status = 'done', lesson_id = $1, error = null where id = $2",
-      [req.body.lessonId, Number(videoId)],
-    );
-  }
-  res.status(201).json({ ok: true, lessonId: req.body.lessonId });
+  if (videoId === undefined) return res.status(201).json({ ok: true, lessonId: req.body.lessonId });
+
+  // Only a video that is queued or being processed can become done.
+  const { rowCount } = await db.query(
+    `update videos set status = 'done', lesson_id = $1, error = null
+     where id = $2 and status in ('pending', 'processing')`,
+    [req.body.lessonId, videoId],
+  );
+  // The lesson is saved either way; videoUpdated is false if the video doesn't exist or isn't pending/processing.
+  res.status(201).json({ ok: true, lessonId: req.body.lessonId, videoUpdated: rowCount === 1 });
 });
 
 // Save one practice run and its steps, all or nothing.
@@ -129,6 +170,10 @@ app.post('/results', async (req, res) => {
   const r = req.body;
   if (!r || typeof r.lessonId !== 'string' || !Array.isArray(r.steps)) {
     return res.status(400).json({ errors: ['lessonId (text) and steps (list) are required'] });
+  }
+  const badStep = r.steps.findIndex((s) => !s || typeof s !== 'object' || typeof s.stepId !== 'string');
+  if (badStep !== -1) {
+    return res.status(400).json({ errors: [`steps[${badStep}] must be an object with a stepId (text)`] });
   }
 
   const client = await db.pool.connect();
@@ -157,6 +202,95 @@ app.post('/results', async (req, res) => {
   }
 });
 
+// Webpage: start a video upload. Creates the row ('uploading') and returns a one-time upload link.
+// The file itself goes straight from the browser to Neon storage, never through this server.
+app.post('/videos', async (req, res) => {
+  const { fileName, contentType } = req.body ?? {};
+  if (typeof fileName !== 'string' || !fileName.trim()) {
+    return res.status(400).json({ errors: ['fileName (text) is required'] });
+  }
+  if (!VIDEO_TYPES.includes(contentType)) {
+    return res.status(400).json({ errors: [`contentType must be one of: ${VIDEO_TYPES.join(', ')}`] });
+  }
+
+  // Make the link first, so a storage problem never leaves a row behind.
+  const key = storage.makeVideoKey(fileName);
+  const uploadUrl = await storage.uploadUrl(key, contentType);
+  const { rows } = await db.query(
+    "insert into videos (file_name, storage_key, status) values ($1, $2, 'uploading') returning id",
+    [fileName, key],
+  );
+  res.status(201).json({ videoId: rows[0].id, uploadUrl, contentType });
+});
+
+// Webpage: the upload finished. Checks the file really is in storage, then queues it ('pending').
+app.post('/videos/:id/uploaded', async (req, res) => {
+  const id = parseId(req.params.id);
+  if (id === null) return res.status(400).json({ errors: ['video id must be a whole number'] });
+
+  const { rows } = await db.query('select storage_key, status from videos where id = $1', [id]);
+  const video = rows[0];
+  if (!video) return res.status(404).json({ errors: [`Video ${id} not found`] });
+  if (video.status !== 'uploading') {
+    return res.status(409).json({ errors: [`Video ${id} is already ${video.status}`] });
+  }
+
+  const file = await storage.fileExists(video.storage_key);
+  if (!file.exists) {
+    return res.status(409).json({ errors: ['File not found in storage yet. Upload it to uploadUrl first.'] });
+  }
+
+  await db.query("update videos set status = 'pending' where id = $1", [id]);
+  res.json({ ok: true, videoId: id, status: 'pending', size: file.size });
+});
+
+// Dominick's script: GET /videos?status=pending. Webpage: GET /videos (all).
+// Every video whose file is in storage gets a fresh 15-minute download link.
+app.get('/videos', async (req, res) => {
+  const { status } = req.query;
+  if (status !== undefined && !VIDEO_STATUSES.includes(status)) {
+    return res.status(400).json({ errors: [`status must be one of: ${VIDEO_STATUSES.join(', ')}`] });
+  }
+
+  const { rows } = status
+    ? await db.query('select * from videos where status = $1 order by id', [status])
+    : await db.query('select * from videos order by id');
+
+  const videos = await Promise.all(rows.map(async (v) => ({
+    ...videoInfo(v),
+    downloadUrl: v.status === 'uploading' ? null : await storage.downloadUrl(v.storage_key),
+  })));
+  res.json(videos);
+});
+
+// Dominick's script: report progress on one video (processing, failed + reason, or back to pending).
+// 'done' is only set by POST /lessons?videoId=, so a video can't count as done without a valid lesson.
+app.patch('/videos/:id', async (req, res) => {
+  const id = parseId(req.params.id);
+  if (id === null) return res.status(400).json({ errors: ['video id must be a whole number'] });
+
+  const { status, error } = req.body ?? {};
+  if (!VIDEO_MOVES[status]) {
+    return res.status(400).json({
+      errors: ['status must be processing, failed, or pending (done is set by POST /lessons?videoId=)'],
+    });
+  }
+
+  // Only change it if the current status allows the move (also stops two scripts claiming one video).
+  const { rowCount } = await db.query(
+    'update videos set status = $1, error = $2 where id = $3 and status = any($4::text[])',
+    [status, status === 'failed' ? String(error ?? 'unknown error') : null, id, VIDEO_MOVES[status]],
+  );
+  if (rowCount === 0) {
+    const { rows } = await db.query('select status from videos where id = $1', [id]);
+    if (!rows[0]) return res.status(404).json({ errors: [`Video ${id} not found`] });
+    return res.status(409).json({
+      errors: [`Video ${id} is ${rows[0].status}; it can only become ${status} from ${VIDEO_MOVES[status].join(' or ')}`],
+    });
+  }
+  res.json({ ok: true, videoId: id, status });
+});
+
 // Unknown address.
 app.use((req, res) => {
   res.status(404).json({ errors: [`No endpoint ${req.method} ${req.path}`] });
@@ -171,6 +305,7 @@ app.use((err, req, res, next) => {
     return res.status(400).json({ errors: [`Invalid value: ${err.message}`] });
   }
   console.error(err);
+  if (err.$metadata) return res.status(502).json({ errors: ['Video storage unavailable or failed. Try again.'] });
   res.status(503).json({ errors: ['Database unavailable or failed. Try again.'] });
 });
 
