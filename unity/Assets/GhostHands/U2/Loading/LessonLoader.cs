@@ -100,10 +100,17 @@ namespace GhostHands
 
         private static IEnumerator Read(string url, Action<string> success, Action<string> failed)
         {
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) ||
+                (uri.Scheme != "http" && uri.Scheme != "https" && uri.Scheme != "file" && uri.Scheme != "jar"))
+            {
+                failed("Invalid lesson URL: " + url);
+                yield break;
+            }
             using (var request = UnityWebRequest.Get(url))
             {
                 request.timeout = 3;
-                yield return request.SendWebRequest();
+                var operation = request.SendWebRequest();
+                while (!operation.isDone) yield return null;
                 if (request.result == UnityWebRequest.Result.Success) success(request.downloadHandler.text);
                 else failed("GET " + url + ": " + request.responseCode + " " + request.error + " " + request.downloadHandler.text);
             }

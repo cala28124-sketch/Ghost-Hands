@@ -1,0 +1,8 @@
+{
+  "name": "GhostHands",
+  "rootNamespace": "GhostHands",
+  "references": ["GhostHands.Core", "GhostHands.U1", "Unity.TextMeshPro", "Unity.ugui", "Unity.InputSystem"],
+  "overrideReferences": true,
+  "precompiledReferences": ["Newtonsoft.Json.dll"],
+  "autoReferenced": true
+}

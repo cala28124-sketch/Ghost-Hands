@@ -1,0 +1,16 @@
+<linker>
+  <assembly fullname="GhostHands.Core">
+    <type fullname="GhostHands.Lesson" preserve="all" />
+    <type fullname="GhostHands.LessonStep" preserve="all" />
+    <type fullname="GhostHands.LessonHand" preserve="all" />
+    <type fullname="GhostHands.TargetAngles" preserve="all" />
+  </assembly>
+  <assembly fullname="GhostHands">
+    <type fullname="GhostHands.LessonSummary" preserve="all" />
+    <type fullname="GhostHands.SessionResults" preserve="all" />
+    <type fullname="GhostHands.StepResult" preserve="all" />
+  </assembly>
+  <assembly fullname="GhostHands.U1">
+    <type fullname="GhostHands.GhostHandRenderer" preserve="all" />
+  </assembly>
+</linker>

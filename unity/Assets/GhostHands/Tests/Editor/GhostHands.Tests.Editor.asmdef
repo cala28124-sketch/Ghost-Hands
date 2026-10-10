@@ -1,0 +1,9 @@
+{
+  "name": "GhostHands.Tests.Editor",
+  "rootNamespace": "GhostHands",
+  "references": ["GhostHands", "GhostHands.Core", "GhostHands.U1", "Unity.XR.Hands", "Unity.TextMeshPro", "Unity.ugui", "Oculus.VR", "Oculus.Interaction"],
+  "overrideReferences": true,
+  "precompiledReferences": ["Newtonsoft.Json.dll", "nunit.framework.dll"],
+  "includePlatforms": ["Editor"],
+  "optionalUnityReferences": ["TestAssemblies"]
+}

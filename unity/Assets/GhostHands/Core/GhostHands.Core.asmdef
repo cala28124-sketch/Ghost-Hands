@@ -1,0 +1,8 @@
+{
+  "name": "GhostHands.Core",
+  "rootNamespace": "GhostHands",
+  "references": ["Unity.XR.Hands"],
+  "overrideReferences": true,
+  "precompiledReferences": ["Newtonsoft.Json.dll"],
+  "autoReferenced": true
+}

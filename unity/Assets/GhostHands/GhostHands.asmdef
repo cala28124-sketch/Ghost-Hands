@@ -1,6 +1,0 @@
-{
-  "name": "GhostHands",
-  "rootNamespace": "GhostHands",
-  "references": ["Unity.XR.Hands", "Unity.Newtonsoft.Json", "Unity.TextMeshPro", "Unity.ugui", "Unity.InputSystem"],
-  "autoReferenced": true
-}

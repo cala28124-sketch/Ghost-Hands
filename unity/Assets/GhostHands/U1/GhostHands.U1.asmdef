@@ -1,0 +1,8 @@
+{
+  "name": "GhostHands.U1",
+  "rootNamespace": "GhostHands",
+  "references": ["GhostHands.Core", "Unity.XR.Hands", "Oculus.VR", "Oculus.Interaction", "Unity.InputSystem"],
+  "overrideReferences": true,
+  "precompiledReferences": ["Newtonsoft.Json.dll"],
+  "autoReferenced": true
+}
