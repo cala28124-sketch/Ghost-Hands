@@ -31,3 +31,9 @@ unity/*.csproj
 unity/*.sln
 unity/*.apk
 unity/*.aab
+
+# Neon / AI tooling (personal)
+.neon
+.claude/skills/
+.claude/settings.local.json
+skills-lock.json
