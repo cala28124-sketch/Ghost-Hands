@@ -1,7 +1,45 @@
 // server.js: the Ghost Hands lesson server (Express 5), run on the laptop.
 // Headset: GET /lessons, GET /lessons/:id, POST /results. Dominick's script and the webpage: POST /lessons.
 // Lessons fall back to shared/lessons/*.json when Neon is unreachable.
-// Run from web/: npm start  (listens on port 3000, or PORT from .env.local)
+//
+// ── START THE SERVER ─────────────────────────────────────────────────────────
+//   cd web
+//   npm install        (first time only)
+//   npm start          (port 3000, or PORT from the repo-root .env.local)
+//   Stop it with Ctrl+C.
+//
+// ── ADDRESS TO USE ───────────────────────────────────────────────────────────
+//   On the laptop itself:   http://localhost:3000
+//   From the headset or another laptop (same wifi):   http://<laptop-ip>:3000
+//   The server prints <laptop-ip> when it starts ("Headset URL: ..."). It changes when the wifi changes.
+//   Last seen on the hackathon wifi: http://10.32.217.238:3000
+//
+// ── EXAMPLE REQUESTS (replace localhost with <laptop-ip> from another device) ──
+//   Check the server and database:
+//     curl http://localhost:3000/health
+//     → {"ok":true,"db":"neon"}        ("offline" = Neon unreachable; lessons come from local files)
+//
+//   List lessons (headset menu):
+//     curl http://localhost:3000/lessons
+//     → [{"lessonId":"example","title":"Example lesson ...","hands":["left","right"],"stepCount":5}]
+//
+//   Get one full lesson:
+//     curl http://localhost:3000/lessons/example
+//     → the whole lesson JSON (shape: shared/lesson.schema.json); 404 {"errors":[...]} if unknown
+//
+//   Save a lesson (Dominick's script, webpage); add ?videoId=5 to also mark video 5 done:
+//     curl -X POST -H "Content-Type: application/json" \
+//          --data @../shared/lessons/example.json http://localhost:3000/lessons
+//     → 201 {"ok":true,"lessonId":"example"}   or   400 {"errors":["/steps/0 must have required property 'holdMs'"]}
+//
+//   Save a practice run (headset):
+//     curl -X POST -H "Content-Type: application/json" http://localhost:3000/results --data \
+//       '{"lessonId":"example","tester":"judge-1","device":"Quest 3S","completed":true,"recallPassed":true,
+//         "steps":[{"stepId":"step-01","timeToMatchMs":2400,"retries":0,"trackingLosses":1}]}'
+//     → 201 {"ok":true,"sessionId":1}   (tester, device, recallPassed are optional)
+//
+//   Every error answer has the same shape: {"errors":["..."]}.
+//   400 = fix what you sent · 404 = not found · 503 = database problem, try again.
 
 const fs = require('fs');
 const os = require('os');
