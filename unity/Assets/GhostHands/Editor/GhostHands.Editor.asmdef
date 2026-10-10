@@ -1,0 +1,6 @@
+{
+  "name": "GhostHands.Editor",
+  "rootNamespace": "GhostHands",
+  "references": ["GhostHands"],
+  "includePlatforms": ["Editor"]
+}
