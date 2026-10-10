@@ -1,4 +1,5 @@
-opencv-python==5.0.0.93
 mediapipe==1.1.0
+opencv-contrib-python==5.0.0.93  # the OpenCV build mediapipe requires; don't also install opencv-python
 numpy
 jsonschema
+matplotlib  # motion graph (already required by mediapipe)

@@ -160,6 +160,16 @@ If you change this README's tables, change `lesson.schema.json` in the same comm
 - In the hand's own frame (`joints`), the palm faces down and the fingers point forward (+z). The left hand is the right hand mirrored across x.
 - `wristRotation` is relative to the viewer: the camera in the video, the headset in XR. `[0, 0, 0, 1]` (no rotation) means palm down, fingers pointing forward.
 
+### Exact definitions used by `cv/` (proposed by Dominick, to confirm with U1 and U2)
+
+- **Hand frame** (the axes `joints` are in): forward (+z) = wrist → middle knuckle (landmark 9); right (+x) = across the knuckles, index (5) → pinky (17) on a right hand and pinky → index on a left hand; up (+y) = forward × right, the back of the hand.
+- **`wristRotation`** turns the hand frame into the viewer's frame. To draw the ghost: `jointPosition = wristAnchor + wristRotation * joints[i]`.
+- **`targetAngles`**: the bend at a joint is the angle between the two bones that meet there (0 = straight).
+  - Fingers `[MCP, PIP, DIP]` are measured at landmarks 5/6/7 (index), 9/10/11, 13/14/15 and 17/18/19. The MCP bend uses the wrist → knuckle bone. Positive = toward the palm, negative = bent backwards.
+  - Thumb `[MCP, IP]` at landmarks 2 and 3, always positive.
+  - The matcher must compute live angles the same way: see `bend_angles` in `cv/ghosthands/handpose.py`.
+- **Recording:** film from the expert's point of view (camera at the head or chest). The video's camera stands in for the learner's headset, so another angle makes `wristRotation` wrong in XR.
+
 ## Rules
 
 - Every lesson must pass the validator before it's saved or served.
