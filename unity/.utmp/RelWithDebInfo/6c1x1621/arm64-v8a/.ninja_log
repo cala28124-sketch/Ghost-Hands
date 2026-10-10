@@ -1,0 +1,10 @@
+# ninja log v5
+147	3590	8133200931738135	GameActivity/CMakeFiles/game.dir/UGAInputKeyEvent.cpp.o	4b558f473fe60515
+85	3659	8133200931924588	GameActivity/CMakeFiles/game.dir/UGAEntry.cpp.o	f78ca138a1b37c51
+21	3663	8133200932207643	GameActivity/CMakeFiles/game.dir/UGAConfiguration.cpp.o	7ae9f90e5dd50696
+179	3674	8133200932416811	GameActivity/CMakeFiles/game.dir/UGAInputMotionEvent.cpp.o	1427ee97f9cf1ebf
+62	3724	8133200933129545	GameActivity/CMakeFiles/game.dir/UGADebug.cpp.o	deab0c061db77044
+206	3968	8133200935595283	GameActivity/CMakeFiles/game.dir/UGASoftKeyboard.cpp.o	4d368687180b77a7
+43	4071	8133200936548959	GameActivity/CMakeFiles/game.dir/UGAInput.cpp.o	4723615d356f0a74
+1	4254	8133200938427783	GameActivity/CMakeFiles/game.dir/UGAApplication.cpp.o	918266cbeb3e8e2f
+4254	4514	8133200941057179	C:/Users/paulm/Projects/Ghost-Hands/unity/Library/Bee/Android/Prj/IL2CPP/Gradle/unityLibrary/build/intermediates/cxx/RelWithDebInfo/6c1x1621/obj/arm64-v8a/libgame.so	dca968cf5081241b

@@ -1,0 +1,60 @@
+
+# Unity generated folders
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Ll]ogs/
+[Uu]ser[Ss]ettings/
+[Mm]emoryCaptures/
+[Rr]ecordings/
+
+# Unity build outputs
+[Bb]uild/
+[Bb]uilds/
+[Aa]pk/
+[Aa]ab/
+*.apk
+*.aab
+*.unitypackage
+
+# IDE/editor generated files
+.vs/
+.vscode/
+.idea/
+.gradle/
+.gradle-cache/
+*.csproj
+*.sln
+*.suo
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svclog
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+
+# OS generated files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Crash reports
+sysinfo.txt
+crashlytics-build.properties
+
+# Android / Meta Quest build artifacts
+*.keystore
+*.jks
+local.properties
+
+# Unity Collaborate / Version Control
+.collab/
+.vsconfig
+
+# Optional: exclude local environment files
+.env
+.env.*
+!.env.example
