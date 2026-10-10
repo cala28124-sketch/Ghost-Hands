@@ -1,0 +1,101 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ghost-hands/lesson.schema.json",
+  "title": "Ghost Hands lesson",
+  "description": "Schema version 2. Field meanings: shared/lessons/README.md",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "lessonId",
+    "title",
+    "hands",
+    "coordinateConvention",
+    "angleUnit",
+    "positionUnit",
+    "steps"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 2 },
+    "lessonId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$", "maxLength": 64 },
+    "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "hands": {
+      "type": "array",
+      "items": { "enum": ["left", "right"] },
+      "minItems": 1,
+      "maxItems": 2,
+      "uniqueItems": true
+    },
+    "coordinateConvention": { "const": "wrist-relative" },
+    "angleUnit": { "const": "degrees" },
+    "positionUnit": { "const": "meters" },
+    "anchor": { "type": "object", "description": "Stretch goal: object the lesson is placed relative to. Shape not decided." },
+    "steps": { "type": "array", "minItems": 1, "items": { "$ref": "#/definitions/step" } }
+  },
+  "definitions": {
+    "step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "instruction", "mode", "durationMs", "hands"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "label": { "type": "string", "maxLength": 32 },
+        "instruction": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "mode": { "enum": ["hold", "pass"] },
+        "holdMs": { "type": "integer", "minimum": 100, "maximum": 5000 },
+        "durationMs": { "type": "integer", "minimum": 0, "maximum": 10000 },
+        "hands": {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "properties": {
+            "left": { "$ref": "#/definitions/hand" },
+            "right": { "$ref": "#/definitions/hand" }
+          }
+        }
+      },
+      "if": { "properties": { "mode": { "const": "hold" } } },
+      "then": { "required": ["holdMs"] }
+    },
+    "hand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["targetAngles", "joints", "wristRotation"],
+      "properties": {
+        "targetAngles": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["thumb", "index", "middle", "ring", "pinky"],
+          "properties": {
+            "thumb": { "$ref": "#/definitions/angles2" },
+            "index": { "$ref": "#/definitions/angles3" },
+            "middle": { "$ref": "#/definitions/angles3" },
+            "ring": { "$ref": "#/definitions/angles3" },
+            "pinky": { "$ref": "#/definitions/angles3" }
+          }
+        },
+        "joints": {
+          "type": "array",
+          "minItems": 21,
+          "maxItems": 21,
+          "items": { "$ref": "#/definitions/vec3" }
+        },
+        "wristRotation": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": { "type": "number", "minimum": -1, "maximum": 1 }
+        }
+      }
+    },
+    "angle": { "type": "number", "minimum": -90, "maximum": 180 },
+    "angles2": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "$ref": "#/definitions/angle" } },
+    "angles3": { "type": "array", "minItems": 3, "maxItems": 3, "items": { "$ref": "#/definitions/angle" } },
+    "vec3": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": { "type": "number", "minimum": -0.5, "maximum": 0.5 }
+    }
+  }
+}
