@@ -7,6 +7,7 @@
 //   cd web
 //   npm install        (first time only)
 //   npm start          (port 3000, or PORT from the repo-root .env.local)
+//   Webpage: cd client && npm install && npm run build   (then open http://<laptop-ip>:3000/)
 //   Stop it with Ctrl+C.
 //
 // ── ADDRESS TO USE ───────────────────────────────────────────────────────────
@@ -108,6 +109,9 @@ function videoInfo(v) {
 
 const app = express();
 app.use(express.json({ limit: '1mb' }));
+
+// Upload webpage (React, built into client/dist by `cd client && npm run build`), served at /.
+app.use(express.static(path.join(__dirname, 'client', 'dist')));
 
 // Is the server up, and can it reach Neon?
 app.get('/health', async (req, res) => {
