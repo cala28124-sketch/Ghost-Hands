@@ -13,7 +13,10 @@
 - [ ] Missing or malformed JSON gives a useful error or falls back to the bundled lesson
 - [ ] Quest Pro tested, or device differences documented
 - [ ] At least one video-assisted lesson (from `cv/`) imports into Unity
-- [ ] *(if built)* Lesson transfers from `web/` to the headset; bundled fallback works when the server is off
+- [ ] Headset loads a lesson from the `web/` server; bundled fallback works when the server is off
+- [ ] Upload page: a video uploads from a phone and a PC and becomes `pending`
+- [ ] A practice run posted to `POST /results` appears in Neon (`sessions`, `step_results`)
+- [ ] With Neon unreachable, `/health` says `offline` and lessons still load from local files
 
 ## Usability and reliability
 

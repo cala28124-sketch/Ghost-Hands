@@ -12,8 +12,8 @@ It exists so nobody waits on anybody:
 |---|---|
 | U1 (ghost) | Draw two ghost hands from `joints` and `wristRotation` |
 | U2 (matcher, flow) | Load a lesson, match `targetAngles`, step through `hold` and `pass` steps, run recall |
-| M (cv/) | See the exact shape the exporter must produce |
-| W (web/) | Test the validator, seed Neon, test the server endpoints |
+| Dominick (cv/) | See the exact shape the exporter must produce |
+| Anthony (web/) | Test the validator, seed Neon, test the server endpoints |
 
 It covers every schema feature on purpose: two hands, a step with only one hand, both step modes, and an optional `label`.
 
@@ -173,5 +173,5 @@ If you change this README's tables, change `lesson.schema.json` in the same comm
 ## Rules
 
 - Every lesson must pass the validator before it's saved or served.
-- Changing a field name or meaning is a breaking change: bump `schemaVersion` and tell M, U1, U2, and W.
+- Changing a field name or meaning is a breaking change: bump `schemaVersion` and tell Dominick, U1, U2, and Anthony.
 - Missing or malformed lessons must give a useful error. Unity falls back to its bundled lesson.

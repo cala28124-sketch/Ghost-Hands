@@ -3,11 +3,11 @@
 ## Judge demo script
 
 1. Pitch: "Ghost Hands turns expert demonstrations into repeatable mixed-reality practice."
-2. Show a short expert clip and explain how processing pulls key poses into a lesson.
+2. Show a short expert clip and explain how the pipeline picks key poses automatically and stores the lesson in Neon.
 3. Put the judge in the Quest 3S and launch a preloaded lesson.
 4. Match a pose; show the finger colors and the stable-hold success.
 5. Go through 2–3 steps, then hide the ghost for recall.
-6. If reliable, show a lesson made on one device and loaded on the other.
+6. If reliable, upload a short video on the webpage and show the new lesson appear; then show the judge's practice results in Neon.
 7. Close on equipment-anchored guidance as the future, while being clear universal recognition isn't in the prototype.
 
 Keep the live demo short. Have a prerecorded backup and a preloaded lesson. Never make a judge wait on network transfer or processing.
@@ -24,6 +24,8 @@ Keep the live demo short. Have a prerecorded backup and a preloaded lesson. Neve
 | Over-ambitious automation | Manual step labels allowed; prove one lesson first |
 | Matcher too strict or loose | Per-finger tolerances, real-user tuning, pause on tracking loss |
 | Network transfer fails | Bundled lesson and recorded fallback |
+| Neon outage or free-tier limits | Short clips (10–30 s); server serves local lesson files; bundled lesson in Unity |
+| Automatic keyframes pick wrong poses | Record with 1 s freezes; tune `--still-speed`; fix the keyframes file by hand |
 | Unity merge conflicts | One scene owner, prefabs/components, frequent integration |
 | Overclaiming AI or learning | State what's actually built; show real test results |
 
@@ -35,7 +37,8 @@ Keep the live demo short. Have a prerecorded backup and a preloaded lesson. Neve
 - [ ] Feedback and tracking-loss behavior are understandable
 - [ ] A stable hold advances exactly once
 - [ ] Recall hides the target and gives clear results
-- [ ] At least one video-assisted lesson imports as JSON
+- [ ] At least one lesson made automatically from an uploaded video imports into XR
+- [ ] Lessons and practice results are stored in Neon
 - [ ] A backup recording exists, and what's built vs. roadmap is clear
 - [ ] All four teammates are registered on the submission page
 
