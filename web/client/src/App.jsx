@@ -67,7 +67,7 @@ export default function App() {
       const ext = file.name.split('.').pop().toLowerCase()
       setStatus('Starting upload…')
       const { videoId, uploadUrl } = await api('POST', '/videos', { fileName: `${name.trim()}.${ext}`, contentType })
-      await putFile(uploadUrl, file, contentType, (pct) => setStatus(`Uploading ${pct}%…`))
+      await putFile(uploadUrl, file, contentType, (pct) => setStatus(`Uploading ${pct}%… keep this page open`))
       await api('POST', `/videos/${videoId}/uploaded`)
       setStatus(`Uploaded ✓ (video ${videoId}, waiting for processing)`)
       setFile(null)

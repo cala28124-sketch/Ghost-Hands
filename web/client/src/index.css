@@ -25,10 +25,19 @@
   }
 }
 
+/* Padding and border count inside an element's width, so nothing grows wider than the phone screen. */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
 body {
   margin: 0;
+  padding: 0 1rem; /* side gutter so the card never touches the screen edge on phones */
   background: var(--bg);
   color: var(--fg);
+  -webkit-text-size-adjust: 100%; /* stop iPhones from enlarging text when rotated */
 }
 
 main {
@@ -56,9 +65,31 @@ form {
   gap: 1rem;
 }
 
+/* File picker: full width, with a larger "Choose File" button that's easy to tap. */
+input[type='file'] {
+  width: 100%;
+  font: inherit;
+  color: var(--muted);
+}
+
+input[type='file']::file-selector-button {
+  min-height: 44px;
+  margin-right: 0.75rem;
+  padding: 0 1rem;
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+/* Name box. 16px text (1rem) so iPhones don't zoom in when it's tapped; 44px tall for fingers. */
 input[type='text'] {
+  min-height: 44px;
   padding: 0.6rem 0.75rem;
   font: inherit;
+  font-size: 1rem;
   color: var(--fg);
   background: var(--bg);
   border: 1px solid var(--border);
@@ -66,6 +97,7 @@ input[type='text'] {
 }
 
 button {
+  min-height: 44px;
   padding: 0.65rem;
   font: inherit;
   font-weight: 600;
@@ -84,6 +116,7 @@ button:disabled {
 .status {
   margin: 1.25rem 0 0;
   color: var(--muted);
+  overflow-wrap: anywhere; /* long error messages wrap instead of pushing the page sideways */
 }
 
 .status.error {
@@ -92,7 +125,7 @@ button:disabled {
 
 @media (max-width: 480px) {
   main {
-    margin: 1rem;
+    margin: 1rem auto;
     padding: 1.25rem;
   }
 }
