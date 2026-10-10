@@ -1,3 +1,7 @@
+// db.js: the one connection to Neon Postgres, shared by every other file.
+// Reads DATABASE_URL from the repo-root .env.local and keeps a small pool of reusable connections.
+// Usage: const db = require('./db'); await db.query('select ... where id = $1', [id]);
+
 const path = require('path');
 
 // DATABASE_URL lives in the repo-root .env.local, written by `neon link` and never committed.

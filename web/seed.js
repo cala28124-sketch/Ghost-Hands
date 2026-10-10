@@ -1,3 +1,7 @@
+// seed.js: copies every lesson file in shared/lessons/ into Neon's lessons table.
+// Run from web/: npm run seed. Safe to re-run (existing lessons are updated).
+// Prints ✓ / ✗ per file and exits with code 1 if any file failed.
+
 const fs = require('fs');
 const path = require('path');
 const db = require('./db');

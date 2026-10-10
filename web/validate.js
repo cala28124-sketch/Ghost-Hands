@@ -1,3 +1,7 @@
+// validate.js: checks a lesson object against shared/lesson.schema.json (schema v2).
+// Used by lessons.js before anything is saved to Neon.
+// Usage: const { validateLesson } = require('./validate'); validateLesson(lesson) → { ok, errors[] }
+
 const path = require('path');
 const Ajv = require('ajv');
 

@@ -1,4 +1,5 @@
--- Ghost Hands database tables (Neon Postgres).
+-- schema.sql: creates the Ghost Hands tables in Neon Postgres.
+-- lessons (lesson JSON) · videos (uploaded expert videos) · sessions (practice runs) · step_results (per step).
 -- Safe to run more than once: "if not exists" skips tables that already exist.
 
 -- One row per lesson. "body" holds the full lesson JSON (schema v2).
