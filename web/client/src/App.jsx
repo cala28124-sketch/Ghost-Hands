@@ -4,15 +4,20 @@
 
 import { useState } from 'react'
 
-// The server only accepts these types; some browsers leave file.type empty for .mov, so fall back to the extension.
+// Allowed video types (same list as VIDEO_TYPES in server.js), keyed by file extension.
 const TYPES = { mp4: 'video/mp4', mov: 'video/quicktime', webm: 'video/webm' }
 
+// videoType: works out the video's MIME type, e.g. 'video/mp4', or undefined if it isn't allowed.
+// Purpose: the server and the signed upload link both need the exact type. Some browsers leave
+// file.type empty for .mov, so it falls back to the file's extension.
 function videoType(file) {
   if (Object.values(TYPES).includes(file.type)) return file.type
   return TYPES[file.name.split('.').pop().toLowerCase()]
 }
 
-// Calls the lesson server and throws its first error message ({ errors: [...] }) on failure.
+// api: sends one request to OUR server (an endpoint in web/server.js) and returns its JSON reply.
+// Purpose: one shared way to call any endpoint (POST /videos, POST /videos/:id/uploaded, later /lessons).
+// On failure it throws the server's own message ({ errors: [...] }) so the status line shows the real reason.
 async function api(method, path, body) {
   const res = await fetch(path, {
     method,
@@ -24,7 +29,9 @@ async function api(method, path, body) {
   return data
 }
 
-// Uploads the file straight to Neon storage. XMLHttpRequest (not fetch) so we get progress events.
+// putFile: sends the video file itself to the Neon bucket, using the signed link from POST /videos.
+// Purpose: the big file goes browser → Neon directly and never passes through our server.
+// Uses XMLHttpRequest (not fetch) because only it reports upload progress (the "Uploading 40%…" line).
 function putFile(url, file, contentType, onProgress) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
@@ -37,13 +44,19 @@ function putFile(url, file, contentType, onProgress) {
   })
 }
 
+// App: the upload page. Remembers the picked file, typed name, status message, and whether an upload is running,
+// and redraws the page whenever one of them changes.
 export default function App() {
   const [file, setFile] = useState(null)
   const [name, setName] = useState('')
   const [status, setStatus] = useState('')
   const [busy, setBusy] = useState(false)
 
-  // Runs the three upload steps and reports each one in the status line.
+  // send: runs when the form is submitted (Send button or Enter).
+  // Purpose: does the three upload requests in order, showing progress, success, or the error in the status line.
+  //   1. POST /videos            → our server makes the database row and a signed upload link
+  //   2. putFile                 → the file goes to the Neon bucket
+  //   3. POST /videos/:id/uploaded → our server checks the file arrived and marks the video "pending"
   async function send(e) {
     e.preventDefault()
     const contentType = videoType(file)
@@ -67,6 +80,7 @@ export default function App() {
     }
   }
 
+  // What's drawn: title, the form (file picker, name box, Send), and the status line.
   return (
     <main>
       <h1>Ghost Hands</h1>
