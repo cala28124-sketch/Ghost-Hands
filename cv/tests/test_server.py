@@ -120,7 +120,7 @@ def test_process_pending_end_to_end(fake, tmp_path, monkeypatch):
     fake.add_video(2, "blurry.mp4")
     fake.add_video(3, "taken.mp4", status="processing")  # someone else has it; not in the pending list
 
-    def fake_process_file(video_path: Path, out_dir, lesson_id, title, settings):
+    def fake_process_file(video_path: Path, out_dir, lesson_id, title, settings, camera):
         assert video_path.read_bytes() == b"fake video bytes"  # downloaded from downloadUrl
         if "blurry" in video_path.name:
             raise LessonError("no hands found")

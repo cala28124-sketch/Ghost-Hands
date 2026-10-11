@@ -5,12 +5,12 @@ and saved as an editable keyframes file, so a wrong pick can be fixed by hand an
 """
 
 import json
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 
 import numpy as np
 
-from ghosthands.handpose import WRIST, hand_frame, lesson_hand, pose_difference, to_unity_axes
+from ghosthands.handpose import WRIST, Camera, hand_frame, lesson_hand, pose_difference, to_unity_axes
 from ghosthands.landmarks import Hand, Side
 from ghosthands.tracking import Tracking
 
@@ -18,11 +18,15 @@ HAND_LENGTH = 0.1  # m, wrist to fingertips (roughly); turns a rotation rate int
 PALM_EDGES = [(0, 5), (0, 17), (5, 17)]  # wrist-index knuckle, wrist-pinky knuckle, across the knuckles
 FIRST_STEP_DURATION_MS = 800
 MANUAL_POSE_WINDOW = 3  # frames on each side of a hand-picked keyframe averaged into its pose
+NOISE_PERCENTILE = 10   # the video's steadiest tenth shows how fast tracking jitter makes a still hand seem to move
+NOISE_FACTOR = 1.5      # the threshold sits this far above the jitter
+MAX_STILL_SPEED = 0.3   # m/s; faster than this is movement, however jittery the video
 
 
 @dataclass(frozen=True)
 class KeyframeSettings:
     still_speed: float = 0.10      # m/s; a hand slower than this counts as still. Tune on a real clip.
+    adaptive: bool = True          # raise still_speed on a jittery video (see adapt_to_video)
     min_still_ms: int = 300        # a pause must last this long to become a step
     smooth_frames: int = 5         # rolling median over this many frames, to ignore single-frame jitter
     same_pose_degrees: float = 10  # consecutive pauses closer than this (fingers and wrist) are one pose
@@ -52,6 +56,9 @@ class KeyframesFile:
     lesson_id: str
     title: str
     keyframes: list[Keyframe] = field(default_factory=list)
+    # How the video was filmed, set by hand; turns wristRotation into the learner's view.
+    # None: worked out from the video each time the lesson is built (viewpoint.py).
+    camera: Camera | None = None
 
 
 def _hand_frame(hand: Hand) -> tuple[np.ndarray, np.ndarray]:
@@ -154,6 +161,25 @@ def pose_window(first: int, last: int, max_frames: int) -> tuple[int, int]:
     return start, start + max_frames - 1
 
 
+def adapt_to_video(tracking: Tracking, settings: KeyframeSettings = DEFAULT_SETTINGS) -> KeyframeSettings:
+    """The settings for this video: still_speed raised above its tracking jitter, if that's higher.
+
+    A low-resolution upload (an iPhone shrinks videos picked from Photos to 480x360) makes a still hand seem
+    to move at 0.10-0.15 m/s, so a fixed 0.10 finds no pauses. The jitter is measured where the video is
+    steadiest (its slowest tenth of frames, with every lesson hand seen). A sharp video keeps still_speed.
+    """
+    sides = tracking.active_sides()
+    if not settings.adaptive or not sides:
+        return settings
+    speeds = np.max([rolling_median(hand_speeds(tracking, s), settings.smooth_frames) for s in sides], axis=0)
+    seen = speeds[np.isfinite(speeds)]
+    if len(seen) == 0:
+        return settings
+    jitter = float(np.percentile(seen, NOISE_PERCENTILE))
+    still = max(settings.still_speed, min(NOISE_FACTOR * jitter, MAX_STILL_SPEED))
+    return replace(settings, still_speed=round(still, 3))
+
+
 def auto_keyframes(tracking: Tracking, settings: KeyframeSettings = DEFAULT_SETTINGS) -> list[Keyframe]:
     sides = tracking.active_sides()
     keyframes: list[Keyframe] = []
@@ -191,7 +217,10 @@ def save_keyframes(kf_file: KeyframesFile, path: Path) -> None:
         if "poseFrames" in step:
             step["poseFrames"] = list(step["poseFrames"])
         steps.append(step)
-    data = {"lessonId": kf_file.lesson_id, "title": kf_file.title, "steps": steps}
+    data = {"lessonId": kf_file.lesson_id, "title": kf_file.title}
+    if kf_file.camera is not None:
+        data["camera"] = {"facing": kf_file.camera.facing, "pitchDegrees": kf_file.camera.pitch_degrees}
+    data["steps"] = steps
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
@@ -210,4 +239,7 @@ def load_keyframes(path: Path) -> KeyframesFile:
             keyframes.append(Keyframe(**fields))
         except TypeError as e:
             raise ValueError(f"{path}: step {n}: {e}") from None
-    return KeyframesFile(data["lessonId"], data["title"], keyframes)
+    camera = data.get("camera")
+    if camera is not None:
+        camera = Camera(facing=bool(camera.get("facing", False)), pitch_degrees=float(camera.get("pitchDegrees", 0)))
+    return KeyframesFile(data["lessonId"], data["title"], keyframes, camera)

@@ -1,8 +1,8 @@
 import numpy as np
 import pytest
-from conftest import make_hand, mock_joints, rotation_z
+from conftest import make_hand, mock_joints, rotation_x, rotation_z
 
-from ghosthands.handpose import bend_angles, hand_frame, lesson_hand, pose_difference, quaternion
+from ghosthands.handpose import Camera, bend_angles, hand_frame, lesson_hand, pose_difference, quaternion
 
 
 def random_rotation(seed: int) -> np.ndarray:
@@ -75,3 +75,22 @@ def test_pose_difference():
     finger, wrist = pose_difference(a, b)
     assert finger == pytest.approx(0, abs=0.2)
     assert wrist == pytest.approx(30, abs=0.5)
+
+
+def test_a_camera_facing_the_expert_turns_the_wrist_around_but_keeps_the_pose():
+    world = make_hand("right", mock_joints("right"), rotation_z(30)).world
+    seen = lesson_hand(world, "right")
+    learner = lesson_hand(world, "right", Camera(facing=True))
+
+    assert learner["targetAngles"] == seen["targetAngles"] and learner["joints"] == seen["joints"]
+    # Facing the camera, the palm faced the lens; from the expert's own eyes it's turned 180 degrees about vertical.
+    expected = np.diag([-1.0, 1.0, -1.0]) @ quat_to_matrix(seen["wristRotation"])
+    assert quat_to_matrix(learner["wristRotation"]) == pytest.approx(expected, abs=1e-3)
+
+
+def test_camera_pitch_levels_a_camera_that_looked_down():
+    # Looking down 45 degrees at a flat hand, the camera sees it tilted up by 45; leveling undoes exactly that.
+    flat = lesson_hand(make_hand("right", mock_joints("right")).world, "right")
+    seen_from_above = make_hand("right", mock_joints("right"), rotation_x(-45)).world
+    leveled = lesson_hand(seen_from_above, "right", Camera(pitch_degrees=45))
+    assert quat_to_matrix(leveled["wristRotation"]) == pytest.approx(quat_to_matrix(flat["wristRotation"]), abs=1e-3)

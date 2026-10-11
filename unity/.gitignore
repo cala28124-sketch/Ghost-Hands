@@ -58,3 +58,7 @@ local.properties
 .env
 .env.*
 !.env.example
+
+# Per-developer launch settings from Ghost Hands > Play Lesson
+/Assets/Resources/GhostHands/Launch.json
+/Assets/Resources/GhostHands/Launch.json.meta

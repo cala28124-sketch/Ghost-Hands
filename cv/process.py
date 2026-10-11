@@ -15,20 +15,24 @@ import os
 import sys
 from pathlib import Path
 
+from ghosthands.handpose import Camera
 from ghosthands.keyframes import KeyframeSettings
 from ghosthands.lesson import LessonError, slugify, title_from_name
-from ghosthands.pipeline import make_lesson, track_video
+from ghosthands.pipeline import camera_option, make_lesson, track_video
 from ghosthands.server import DEFAULT_URL, LessonServer, ServerError, download
+from ghosthands.viewpoint import describe
 
 OUT_DIR = Path(__file__).resolve().parent / "out"
 
 
-def process_file(video_path: Path, out_dir: Path, lesson_id: str, title: str, settings: KeyframeSettings) -> dict:
+def process_file(video_path: Path, out_dir: Path, lesson_id: str, title: str, settings: KeyframeSettings,
+                 camera: Camera | None = None) -> dict:
     stem = out_dir / video_path.stem
     print(f"  tracking hands in {video_path.name} ...")
     tracking = track_video(video_path, stem.with_name(stem.name + ".frames.json"))
-    result = make_lesson(tracking, stem, lesson_id, title, settings=settings)
-    print(f"  {len(result.lesson['steps'])} steps -> {result.lesson_path}")
+    result = make_lesson(tracking, stem, lesson_id, title, settings=settings, camera=camera)
+    print(f"  {len(result.lesson['steps'])} steps (still below {result.still_speed} m/s) -> {result.lesson_path}")
+    print(f"  camera: {describe(result.camera)} ({result.camera_note})")
     return result.lesson
 
 
@@ -40,7 +44,8 @@ def update_status(action, video_id: int, *args) -> None:
         print(f"  (couldn't update video {video_id} on the server: {e})")
 
 
-def process_pending(server: LessonServer, out_dir: Path, settings: KeyframeSettings) -> int:
+def process_pending(server: LessonServer, out_dir: Path, settings: KeyframeSettings,
+                    camera: Camera | None = None) -> int:
     videos = server.pending_videos()
     if not videos:
         print("No pending videos.")
@@ -56,7 +61,7 @@ def process_pending(server: LessonServer, out_dir: Path, settings: KeyframeSetti
             folder = out_dir / f"video-{video_id}"
             path = download(video["downloadUrl"], folder / Path(file_name).name)
             name = Path(file_name).stem
-            lesson = process_file(path, folder, f"{slugify(name)}-{video_id}", title_from_name(name), settings)
+            lesson = process_file(path, folder, f"{slugify(name)}-{video_id}", title_from_name(name), settings, camera)
             answer = server.post_lesson(lesson, video_id=video_id)
             print(f"  posted lesson {answer['lessonId']}; video marked done: {answer.get('videoUpdated')}")
         except (LessonError, ServerError, OSError) as e:
@@ -77,15 +82,24 @@ def main() -> int:
     parser.add_argument("--server", default=os.environ.get("GHOSTHANDS_SERVER", DEFAULT_URL))
     parser.add_argument("--post", action="store_true", help="with a local video: upload the lesson to the server")
     parser.add_argument("--out", type=Path, default=OUT_DIR, help="output folder (default: cv/out)")
-    parser.add_argument("--still-speed", type=float, default=KeyframeSettings.still_speed,
-                        help="m/s below which a hand counts as still (default %(default)s)")
+    parser.add_argument("--camera", choices=["pov", "facing"],
+                        help="pov: filmed from the expert's own view; facing: the camera faced the expert "
+                             "(default: worked out from where the hands are in the picture)")
+    parser.add_argument("--camera-pitch", type=float, metavar="DEGREES",
+                        help="how far the camera looked down at the hands (a phone at the chest: about 45; default 0)")
+    parser.add_argument("--still-speed", type=float,
+                        help="m/s below which a hand counts as still; fixes it instead of adapting to the video "
+                         f"(default {KeyframeSettings.still_speed}, raised on a jittery video)")
     args = parser.parse_args()
 
-    settings = KeyframeSettings(still_speed=args.still_speed)
+    fixed = {} if args.still_speed is None else {"still_speed": args.still_speed, "adaptive": False}
+    settings = KeyframeSettings(**fixed)
+    camera = camera_option(args.camera, args.camera_pitch)
     server = LessonServer(args.server)
     if args.video is None:
-        return process_pending(server, args.out, settings)
-    lesson = process_file(args.video, args.out, slugify(args.video.stem), title_from_name(args.video.stem), settings)
+        return process_pending(server, args.out, settings, camera)
+    lesson = process_file(args.video, args.out, slugify(args.video.stem), title_from_name(args.video.stem), settings,
+                          camera)
     if args.post:
         print(f"  posted lesson {server.post_lesson(lesson)['lessonId']}")
     return 0

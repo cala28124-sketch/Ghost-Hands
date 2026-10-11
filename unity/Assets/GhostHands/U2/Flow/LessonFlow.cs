@@ -5,7 +5,8 @@ using UnityEngine;
 
 namespace GhostHands
 {
-    public enum LessonState { Loading, Practice, Recall, Results }
+    // Idle: no lesson running (the main menu is showing).
+    public enum LessonState { Loading, Practice, Recall, Results, Idle }
 
     [RequireComponent(typeof(LessonLoader))]
     public sealed class LessonFlow : MonoBehaviour
@@ -18,6 +19,10 @@ namespace GhostHands
         public MonoBehaviour handJointSource;
         public MonoBehaviour ghostHandRenderer;
         public FingerTolerances tolerances = new FingerTolerances();
+        [Tooltip("In practice, the ghost moves to each new pose over the expert's move time, kept within these limits. " +
+            "Tracking starts when it lands. 0 and 0: no transition.")]
+        [Min(0)] public float minTransitionSeconds = GhostTransition.MinSeconds;
+        [Min(0)] public float maxTransitionSeconds = GhostTransition.MaxSeconds;
         public AudioSource successAudio;
         public LessonState State { get; private set; } = LessonState.Loading;
         public Lesson Lesson { get; private set; }
@@ -27,16 +32,23 @@ namespace GhostHands
         public string Message { get; private set; } = "Loading lesson…";
         public string Hint { get; private set; }
         public float PulseUntil { get; private set; }
+        // Time left while the ghost moves to the current step's pose. Nothing is tracked or scored until it's 0.
+        public float TransitionMs { get; private set; }
+        public bool InTransition => TransitionMs > 0;
+        public float TransitionLengthMs => stepTransitionMs;  // the current step's whole transition
         public bool RecallPassed { get; private set; }
         public SessionResults Results { get; private set; }
+        public LessonPerformance Performance { get; private set; }
         public readonly Dictionary<string, HandMatch> HandMatches = new Dictionary<string, HandMatch>();
         public event Action<LessonStep> StepCompleted;
         public event Action<LessonState> StateChanged;
         public Transform Head => source?.Head;
+        public IHandJointSource Source => source;
         private IHandJointSource source;
         private LessonLoader loader;
         private FingerMatcher leftMatcher, rightMatcher;
         private GhostRendererAdapter ghost;
+        private float stepTransitionMs, stepClosenessMs, stepMatchedMs;  // this step, for the performance overview
         private MonoBehaviour boundRenderer;
         private float nextBindTime;
         private bool ticking;
@@ -65,9 +77,11 @@ namespace GhostHands
             Lesson = null;
             StepIndex = 0;
             Results = null;
+            Performance = null;
             Progress = null;
             RecallPassed = false;
             PulseUntil = 0;
+            TransitionMs = 0;
             leftMatcher.Reset();
             rightMatcher.Reset();
             HandMatches.Clear();
@@ -75,6 +89,31 @@ namespace GhostHands
             Message = "Loading lesson…";
             SetState(LessonState.Loading);
             StartCoroutine(Load());
+        }
+
+        // From the main menu: load and play this lesson.
+        public void StartLesson(string id)
+        {
+            lessonId = id;
+            Retry();
+        }
+
+        // Back to the main menu: stop the lesson and hide the ghost.
+        public void Stop()
+        {
+            EnsureInitialized();
+            StopAllCoroutines();
+            ghost?.Hide();
+            Lesson = null;
+            StepIndex = 0;
+            Results = null;
+            Performance = null;
+            Progress = null;
+            TransitionMs = 0;
+            HandMatches.Clear();
+            Hint = null;
+            Message = "";
+            SetState(LessonState.Idle);
         }
 
         private IEnumerator Load()
@@ -92,6 +131,7 @@ namespace GhostHands
             StepIndex = 0;
             RecallPassed = true;
             ResetResults();
+            Performance = new LessonPerformance();
             SetState(LessonState.Practice);
             EnterStep(null);
         }
@@ -118,6 +158,14 @@ namespace GhostHands
             bool tracked = true, allMatched = true;
             Hint = null;
             HandMatches.Clear();
+            Performance.AddTime(deltaMs);
+            if (InTransition)
+            {
+                // Only the ghost moves: no matching, no hold timer, no tracking-loss count. The fingers stay cyan.
+                TransitionMs = Mathf.Max(0, TransitionMs - deltaMs);
+                Message = "Watch the ghost move to the next pose";
+                return;
+            }
             if (step.mode == "hold")
             {
                 Quaternion? yaw = Head != null ? Quaternion.Euler(0, Head.eulerAngles.y, 0) : (Quaternion?)null;
@@ -151,11 +199,20 @@ namespace GhostHands
                 }
                 Message = !tracked ? "Hands not tracked — hold timer reset" :
                     !allMatched ? (HasWristMismatch() ? "Match the finger pose and wrist rotation" : "Match the finger pose") : "Hold steady";
+                if (tracked && allMatched)
+                {
+                    stepClosenessMs += deltaMs * LessonPerformance.Closeness(MeanErrorRatio());
+                    stepMatchedMs += deltaMs;
+                }
             }
             else Message = State == LessonState.Recall ? "Continue through this motion" : "Watch the ghost motion";
             if (!Progress.Tick(step, deltaMs, tracked, allMatched, State == LessonState.Recall)) return;
             OnStepFinished(step);
             bool passed = Progress.Passed;
+            if (step.mode == "hold")
+                Performance.AddPose(passed, stepMatchedMs > 0 ? stepClosenessMs / stepMatchedMs : 0, Progress.Retries,
+                    stepTransitionMs + step.holdMs.GetValueOrDefault() + LessonPerformance.FindPoseAllowanceMs);
+            else Performance.AddMotion(step.durationMs);
             if (passed)
             {
                 PulseUntil = Time.unscaledTime + 0.25f;
@@ -166,6 +223,16 @@ namespace GhostHands
             else OnRoundFinished();
             // Notify after advancement so listeners cannot advance the completed step a second time.
             if (passed) StepCompleted?.Invoke(step);
+        }
+
+        // Each finger's error as a fraction of its tolerance, averaged over the fingers of the hands in this step.
+        private float MeanErrorRatio()
+        {
+            float sum = 0; int count = 0;
+            foreach (var match in HandMatches.Values)
+                foreach (var pair in match.Errors)
+                { sum += pair.Value / Mathf.Max(1, tolerances.ForFinger(pair.Key)); count++; }
+            return count == 0 ? 0 : sum / count;
         }
 
         private bool HasWristMismatch()
@@ -179,7 +246,11 @@ namespace GhostHands
             Progress = new StepProgress();
             leftMatcher.Reset(); rightMatcher.Reset();
             HandMatches.Clear(); Hint = null;
-            ghost?.ShowStep(previous, CurrentStep);
+            // Only practice shows the move; recall hides the ghost, so it tracks straight away.
+            float seconds = GhostTransition.Seconds(previous, CurrentStep, minTransitionSeconds, maxTransitionSeconds);
+            TransitionMs = State == LessonState.Practice && CurrentStep.mode == "hold" ? Mathf.Round(seconds * 1000) : 0;
+            stepTransitionMs = TransitionMs; stepClosenessMs = 0; stepMatchedMs = 0;
+            ghost?.ShowStep(previous, CurrentStep, seconds);
             ghost?.SetVisible(State == LessonState.Practice);
         }
 
@@ -200,7 +271,7 @@ namespace GhostHands
             ghost = new GhostRendererAdapter(boundRenderer);
             if (State == LessonState.Practice || State == LessonState.Recall)
             {
-                ghost.ShowStep(StepIndex == 0 ? null : Lesson.steps[StepIndex - 1], CurrentStep);
+                ghost.ShowStep(StepIndex == 0 ? null : Lesson.steps[StepIndex - 1], CurrentStep, TransitionMs / 1000);
                 ghost.SetVisible(State == LessonState.Practice);
             }
             else ghost.Hide();
@@ -233,22 +304,21 @@ namespace GhostHands
             Results.recallPassed = RecallPassed;
             SetState(LessonState.Results);
             ghost?.Hide();
-            Message = RecallPassed ? "Recall passed" : "Recall finished — a hold exceeded 20 seconds";
-            Message += "\n" + Results.steps.Count + " recall steps completed";
-            int retries = 0, losses = 0, totalMs = 0;
-            foreach (var result in Results.steps)
-            { retries += result.retries; losses += result.trackingLosses; totalMs += result.timeToMatchMs; }
-            Message += "\n" + (totalMs / 1000f).ToString("0.0") + " s · " + retries + " retries · " + losses + " tracking losses";
+            // The panel shows the performance overview; this line goes under it.
+            Message = RecallPassed ? "Recall passed" : "Recall finished — a pose took over 20 seconds";
+            var p = Performance;
+            Debug.Log($"[GhostHands] {Lesson.lessonId}: performance {p.Rating:0.0}/10 — accuracy {p.Accuracy:P0}, " +
+                $"{p.TimesTried} tries for {p.Poses} poses, {LessonPerformance.FormatTime(p.TotalMs)} (par {LessonPerformance.FormatTime(p.ParMs)})");
             if (submitResults) StartCoroutine(Submit());
         }
 
         private IEnumerator Submit()
         {
             string summary = Message;
-            Message = summary + "\nSaving results…";
+            Message = summary + " · Saving results…";
             yield return ResultsClient.Post(loader.ServerUrl, Results,
-                id => Message = summary + "\nSaved session " + id,
-                error => Message = summary + "\nCould not save to server; results kept here and in the log");
+                id => Message = summary + " · Saved session " + id,
+                error => Message = summary + " · Not saved to the server (kept in the log)");
         }
     }
 }

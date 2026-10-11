@@ -22,6 +22,11 @@ def mock_joints(side: str, step: int = 0) -> np.ndarray:
     return np.array(example_lesson()["steps"][step]["hands"][side]["joints"])
 
 
+def rotation_x(degrees: float) -> np.ndarray:
+    a = np.radians(degrees)
+    return np.array([[1, 0, 0], [0, np.cos(a), -np.sin(a)], [0, np.sin(a), np.cos(a)]])
+
+
 def rotation_z(degrees: float) -> np.ndarray:
     a = np.radians(degrees)
     return np.array([[np.cos(a), -np.sin(a), 0], [np.sin(a), np.cos(a), 0], [0, 0, 1]])

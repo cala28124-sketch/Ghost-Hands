@@ -12,6 +12,7 @@ namespace GhostHands
         private XRHandSubsystem subsystem;
         private float nextDiscovery;
         private readonly string[] providers = { "Unavailable", "Unavailable" };
+        private readonly string[] loggedProviders = new string[2];
         private readonly int[] sampledFrames = { -1, -1 };
         private readonly Vector3[][] sampledJoints = new Vector3[2][];
         public Transform Head => head != null ? head : Camera.main != null ? Camera.main.transform : null;
@@ -66,7 +67,20 @@ namespace GhostHands
                 interactionFallback.TryGetJoints(isRight, out worldJoints21)) providers[index] = "Interaction SDK";
             sampledFrames[index] = Time.frameCount;
             sampledJoints[index] = worldJoints21;
+            LogProviderChange(index);
             return worldJoints21 != null;
+        }
+
+        // One line each time a hand's source changes (adb logcat -s Unity): says why tracking is missing on device.
+        private void LogProviderChange(int index)
+        {
+            if (providers[index] == loggedProviders[index]) return;
+            loggedProviders[index] = providers[index];
+            var hand = subsystem == null ? default : index == 1 ? subsystem.rightHand : subsystem.leftHand;
+            Debug.Log($"[GhostHands] {(index == 1 ? "Right" : "Left")} hand: {providers[index]}. XR Hands subsystem: " +
+                $"{(subsystem == null ? "none" : subsystem.running ? "running" : "stopped")}, tracked: {subsystem != null && hand.isTracked}; " +
+                $"TrackingSpace: {(trackingSpace != null ? trackingSpace.name : "missing")}; " +
+                $"Interaction SDK fallback: {(interactionFallback != null ? interactionFallback.Describe(index == 1) : "missing")}");
         }
 
         public Vector3 OriginToWorld(Vector3 originPoint)

@@ -10,7 +10,10 @@ namespace GhostHands
         public int TrackingLosses { get; private set; }
         public bool Finished { get; private set; }
         public bool Passed { get; private set; }
+        // A pose break shorter than this (a twitch, tracking jitter) pauses the hold instead of resetting it.
+        public const float BreakGraceMs = 250;
         private bool wasUnavailable;
+        private float brokenMs;
 
         // Returns true exactly once, when this step completes or its recall deadline expires.
         public bool Tick(LessonStep step, float deltaMs, bool tracked, bool allMatched, bool recall)
@@ -29,16 +32,25 @@ namespace GhostHands
                 if (!wasUnavailable) TrackingLosses++;
                 wasUnavailable = true;
                 HeldMs = 0;
+                brokenMs = 0;
             }
             else
             {
                 wasUnavailable = false;
                 if (!allMatched)
                 {
-                    if (HeldMs > 0) Retries++;
-                    HeldMs = 0;
+                    brokenMs += deltaMs;
+                    if (HeldMs > 0 && brokenMs > BreakGraceMs)
+                    {
+                        Retries++;
+                        HeldMs = 0;
+                    }
                 }
-                else HeldMs += deltaMs;
+                else
+                {
+                    brokenMs = 0;
+                    HeldMs += deltaMs;
+                }
             }
             // Crossing the deadline and finishing the hold in the same tick must fail.
             if (recall && ElapsedMs > 20000) return Finish(false);

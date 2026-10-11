@@ -19,8 +19,9 @@ from pathlib import Path
 
 from ghosthands.keyframes import KeyframeSettings
 from ghosthands.lesson import LessonError, slugify, title_from_name, validate_lesson
-from ghosthands.pipeline import make_lesson
+from ghosthands.pipeline import camera_option, make_lesson
 from ghosthands.tracking import load_tracking
+from ghosthands.viewpoint import describe
 
 
 def check(path: Path) -> int:
@@ -44,8 +45,14 @@ def main() -> int:
     parser.add_argument("--keyframes", type=Path, help="use this keyframes file instead of automatic keyframes")
     parser.add_argument("--lesson-id", help="default: from the video's file name")
     parser.add_argument("--title", help="default: from the video's file name")
-    parser.add_argument("--still-speed", type=float, default=KeyframeSettings.still_speed,
-                        help="m/s below which a hand counts as still (default %(default)s; see motion.png)")
+    parser.add_argument("--camera", choices=["pov", "facing"],
+                        help="pov: filmed from the expert's own view; facing: the camera faced the expert "
+                             "(default: worked out from where the hands are in the picture)")
+    parser.add_argument("--camera-pitch", type=float, metavar="DEGREES",
+                        help="how far the camera looked down at the hands (a phone at the chest: about 45; default 0)")
+    parser.add_argument("--still-speed", type=float,
+                        help="m/s below which a hand counts as still; fixes it instead of adapting to the video "
+                         f"(default {KeyframeSettings.still_speed}, raised on a jittery video; see motion.png)")
     parser.add_argument("--min-still-ms", type=int, default=KeyframeSettings.min_still_ms,
                         help="how long a pause must last to become a step (default %(default)s)")
     parser.add_argument("--no-review", action="store_true", help="skip the review video and images")
@@ -59,16 +66,20 @@ def main() -> int:
 
     tracking = load_tracking(args.frames)
     name = args.frames.name.removesuffix(".frames.json")
-    settings = KeyframeSettings(still_speed=args.still_speed, min_still_ms=args.min_still_ms)
+    fixed = {} if args.still_speed is None else {"still_speed": args.still_speed, "adaptive": False}
+    settings = KeyframeSettings(min_still_ms=args.min_still_ms, **fixed)
     result = make_lesson(
         tracking, args.frames.with_name(name),
         lesson_id=args.lesson_id or slugify(name),
         title=args.title or title_from_name(name),
-        keyframes_path=args.keyframes, settings=settings, review=not args.no_review,
+        keyframes_path=args.keyframes, settings=settings, camera=camera_option(args.camera, args.camera_pitch),
+        review=not args.no_review,
     )
 
     lesson = result.lesson
-    print(f"OK {result.lesson_path}: {len(lesson['steps'])} steps, hands: {', '.join(lesson['hands'])}")
+    print(f"OK {result.lesson_path}: {len(lesson['steps'])} steps, hands: {', '.join(lesson['hands'])}, "
+          f"still below {result.still_speed} m/s")
+    print(f"  camera: {describe(result.camera)} ({result.camera_note})")
     print(f"  keyframes: {result.keyframes_path}  (edit, then rebuild with --keyframes)")
     for path in result.review_paths:
         print(f"  {path}")

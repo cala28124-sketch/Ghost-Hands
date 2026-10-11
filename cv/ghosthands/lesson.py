@@ -9,7 +9,7 @@ from typing import Any
 import numpy as np
 from jsonschema import Draft7Validator
 
-from ghosthands.handpose import lesson_hand
+from ghosthands.handpose import DEFAULT_CAMERA, Camera, lesson_hand
 from ghosthands.keyframes import FIRST_STEP_DURATION_MS, Keyframe, keyframe_frames, median_world
 from ghosthands.tracking import Tracking
 
@@ -32,7 +32,8 @@ def title_from_name(name: str) -> str:
     return re.sub(r"[_-]+", " ", name).strip() or "Untitled lesson"
 
 
-def build_lesson(tracking: Tracking, lesson_id: str, title: str, keyframes: list[Keyframe]) -> dict[str, Any]:
+def build_lesson(tracking: Tracking, lesson_id: str, title: str, keyframes: list[Keyframe],
+                 camera: Camera = DEFAULT_CAMERA) -> dict[str, Any]:
     if not tracking.frames:
         raise LessonError("the video has no frames")
     if not keyframes:
@@ -53,7 +54,7 @@ def build_lesson(tracking: Tracking, lesson_id: str, title: str, keyframes: list
                     f"step {n} ({t_ms} ms): the {side} hand isn't visible there; "
                     f'pick another moment, or list only the visible hands in the step\'s "hands"'
                 )
-            hands[side] = lesson_hand(world, side)
+            hands[side] = lesson_hand(world, side, camera)
         used_sides.update(hands)
 
         if kf.duration_ms is not None:

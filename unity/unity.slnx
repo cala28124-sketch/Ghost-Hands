@@ -1,0 +1,9 @@
+﻿<Solution>
+  <Project Path="GhostHands.Core.csproj" />
+  <Project Path="GhostHands.Tests.Editor.csproj" />
+  <Project Path="GhostHands.Editor.csproj" />
+  <Project Path="GhostHands.csproj" />
+  <Project Path="Assembly-CSharp.csproj" />
+  <Project Path="GhostHands.U1.csproj" />
+  <Project Path="Assembly-CSharp-Editor.csproj" />
+</Solution>

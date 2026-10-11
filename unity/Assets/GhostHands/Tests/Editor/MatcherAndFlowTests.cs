@@ -21,6 +21,7 @@ namespace GhostHands
             public bool Tracked = true;
             public bool RightTracked = true;
             public bool Incorrect;
+            public Vector3? Fingertip;  // where the index fingertip is, when a test moves it
             public bool TryGetJoints(bool isRight, out Vector3[] worldJoints21)
             {
                 worldJoints21 = null;
@@ -28,6 +29,7 @@ namespace GhostHands
                     !Flow.CurrentStep.hands.TryGetValue(isRight ? "right" : "left", out var hand)) return false;
                 worldJoints21 = ReplayJointSource.WorldPose(hand, isRight, Head);
                 if (Incorrect) BendIndex(worldJoints21, isRight, 80);
+                if (Fingertip.HasValue) worldJoints21[8] = Fingertip.Value;
                 return true;
             }
         }
@@ -38,6 +40,7 @@ namespace GhostHands
             lesson = JsonConvert.DeserializeObject<Lesson>(File.ReadAllText(Path.Combine(Application.streamingAssetsPath, "Lessons/example.json")));
             root = new GameObject("U2 Test") { hideFlags = HideFlags.HideAndDontSave };
             flow = root.AddComponent<LessonFlow>(); flow.autoStart = false; flow.submitResults = false;
+            flow.minTransitionSeconds = flow.maxTransitionSeconds = 0;  // these tests time the holds; transitions have their own
             renderer = root.AddComponent<FakeGhostRenderer>(); flow.ghostHandRenderer = renderer;
             source = new FakeSource { Head = root.transform, Flow = flow };
             flow.BeginLesson(lesson, source);
@@ -60,15 +63,55 @@ namespace GhostHands
         }
 
         [TestCase(false)] [TestCase(true)]
-        public void FortyDegreeIndexBendOnlyChangesIndex(bool right)
+        public void FiftyDegreeIndexBendOnlyChangesIndex(bool right)
         {
             var hand = lesson.steps[0].hands[right ? "right" : "left"];
             var joints = hand.JointVectors();
-            BendIndex(joints, right, 40);
+            BendIndex(joints, right, 50);  // the knuckle alone: counts 0.75 x 50 = 37.5, past the index's 30
             var match = new FingerMatcher().Match(hand, joints, right);
             foreach (var finger in FingerMatcher.FingerNames)
-                Assert.That(match.Fingers[finger], Is.EqualTo(finger == "index" ? FingerStatus.Incorrect : FingerStatus.Matched), finger);
+                Assert.That(match.Fingers[finger], Is.EqualTo(finger == "index" ? FingerStatus.Close : FingerStatus.Matched), finger);
             Assert.That(match.Hint, Is.EqualTo("Straighten your index"));
+        }
+
+        [Test]
+        public void FingertipJointCountsHalf()
+        {
+            var hand = lesson.steps[0].hands["right"];
+            var joints = hand.JointVectors();
+            hand.targetAngles = HandConventions.ComputeAngles(HandConventions.ToLocal(joints, HandConventions.HandFrame(joints, true)));
+            hand.targetAngles.index[2] += 40;  // DIP: weighted 20, so 15 on its own and a curl of 8, inside 30
+            Assert.That(new FingerMatcher().Match(hand, joints, true).Fingers["index"], Is.EqualTo(FingerStatus.Matched));
+            hand.targetAngles.index[0] += 50;  // MCP: 37.5 on its own, past 30 but within Close (52.5)
+            Assert.That(new FingerMatcher().Match(hand, joints, true).Fingers["index"], Is.EqualTo(FingerStatus.Close));
+        }
+
+        private LessonHand HandTargetingItself(out Vector3[] joints)
+        {
+            var hand = lesson.steps[0].hands["right"];
+            joints = hand.JointVectors();
+            hand.targetAngles = HandConventions.ComputeAngles(HandConventions.ToLocal(joints, HandConventions.HandFrame(joints, true)));
+            return hand;
+        }
+
+        [Test]
+        public void TheRightCurlSpreadDifferentlyStillMatches()
+        {
+            var hand = HandTargetingItself(out var joints);
+            hand.targetAngles.index[0] += 35;  // more at the knuckle,
+            hand.targetAngles.index[1] -= 35;  // less in the middle: same overall curl, each joint 26.25 on its own
+            var match = new FingerMatcher().Match(hand, joints, true);
+            Assert.That(match.Fingers["index"], Is.EqualTo(FingerStatus.Matched));
+        }
+
+        [Test]
+        public void TheWholeFingerTooBentIsNotMatched()
+        {
+            var hand = HandTargetingItself(out var joints);
+            for (int i = 0; i < 3; i++) hand.targetAngles.index[i] += 35;  // every joint 35 more: overall curl 35, past 30
+            var match = new FingerMatcher().Match(hand, joints, true);
+            Assert.That(match.Fingers["index"], Is.EqualTo(FingerStatus.Close));
+            Assert.That(match.Hint, Is.EqualTo("Bend your index more"));
         }
 
         private static void BendIndex(Vector3[] joints, bool right, float degrees)
@@ -137,10 +180,23 @@ namespace GhostHands
         {
             var progress = new StepProgress(); var step = lesson.steps[0];
             progress.Tick(step, 600, true, true, false);
-            progress.Tick(step, 20, true, false, false);
-            progress.Tick(step, 20, true, false, false);
+            progress.Tick(step, 150, true, false, false);
+            Assert.That(progress.HeldMs, Is.EqualTo(600), "a break inside the grace period only pauses the hold");
+            progress.Tick(step, 150, true, false, false);
             Assert.That(progress.HeldMs, Is.Zero); Assert.That(progress.Retries, Is.EqualTo(1));
+            progress.Tick(step, 150, true, false, false);
+            Assert.That(progress.Retries, Is.EqualTo(1));
             Assert.That(progress.Tick(step, 100, true, true, false), Is.False);
+        }
+
+        [Test]
+        public void BriefBreakKeepsTheHold()
+        {
+            var progress = new StepProgress(); var step = lesson.steps[0];
+            progress.Tick(step, 600, true, true, false);
+            progress.Tick(step, StepProgress.BreakGraceMs, true, false, false);  // e.g. the pinky flickers out of tolerance
+            Assert.That(progress.Tick(step, 100, true, true, false), Is.True);
+            Assert.That(progress.Retries, Is.Zero);
         }
 
         [Test]
@@ -171,7 +227,7 @@ namespace GhostHands
         {
             flow.Tick(300);
             source.Incorrect = true;
-            flow.Tick(100);
+            for (int i = 0; i < 20; i++) flow.Tick(20);  // 400 ms off: past smoothing and the break grace
             Assert.That(flow.StepIndex, Is.Zero);
             Assert.That(flow.Progress.HeldMs, Is.Zero);
             Assert.That(flow.Progress.Retries, Is.EqualTo(1));
@@ -258,9 +314,10 @@ namespace GhostHands
             Assert.That(HandConventions.Bend(Vector3.zero, Vector3.forward, Vector3.forward + Vector3.up, false), Is.EqualTo(90).Within(0.001));
         }
 
-        [TestCase(20, FingerStatus.Matched)]
-        [TestCase(35, FingerStatus.Close)]
-        [TestCase(35.1f, FingerStatus.Incorrect)]
+        // One joint off by this much counts 0.75 of it: 30 is the index's tolerance, 52.5 the edge of Close.
+        [TestCase(40, FingerStatus.Matched)]
+        [TestCase(70, FingerStatus.Close)]
+        [TestCase(70.2f, FingerStatus.Incorrect)]
         public void FingerClassificationHonorsInclusiveBoundaries(float error, FingerStatus expected)
         {
             var hand = lesson.steps[0].hands["right"];
@@ -343,6 +400,215 @@ namespace GhostHands
             Assert.That(viewport.z, Is.GreaterThan(0)); Assert.That(viewport.x, Is.InRange(0.2f, 0.8f));
             Assert.That(viewport.y, Is.InRange(0.2f, 0.8f));
             Assert.That(Quaternion.Angle(panel.Panel.rotation, head.transform.rotation), Is.LessThan(0.001f));
+        }
+
+        private void WithTransitions()
+        {
+            flow.minTransitionSeconds = GhostTransition.MinSeconds; flow.maxTransitionSeconds = GhostTransition.MaxSeconds;
+            flow.BeginLesson(lesson, source);
+        }
+
+        [Test]
+        public void TransitionTakesTheExpertsMoveTimeWithinLimits()
+        {
+            var previous = new LessonStep { mode = "hold" };
+            Assert.That(GhostTransition.Seconds(previous, new LessonStep { mode = "hold", durationMs = 4417 }), Is.EqualTo(1.5f));
+            Assert.That(GhostTransition.Seconds(previous, new LessonStep { mode = "hold", durationMs = 200 }), Is.EqualTo(0.6f));
+            Assert.That(GhostTransition.Seconds(previous, new LessonStep { mode = "hold", durationMs = 1000 }), Is.EqualTo(1f));
+            Assert.That(GhostTransition.Seconds(previous, new LessonStep { mode = "pass", durationMs = 3000 }), Is.EqualTo(3f), "a motion step");
+            Assert.That(GhostTransition.Seconds(null, new LessonStep { mode = "hold", durationMs = 1000 }), Is.Zero, "first step");
+        }
+
+        [Test]
+        public void TransitionEasesInAndOut()
+        {
+            Assert.That(GhostTransition.Ease(0), Is.Zero); Assert.That(GhostTransition.Ease(1), Is.EqualTo(1));
+            Assert.That(GhostTransition.Ease(0.5f), Is.EqualTo(0.5f).Within(1e-6f));
+            Assert.That(GhostTransition.Ease(0.05f), Is.LessThan(0.05f), "starts slowly");
+            Assert.That(GhostTransition.Ease(0.95f), Is.GreaterThan(0.95f), "stops slowly");
+        }
+
+        [Test]
+        public void TransitionSwingsBonesWithoutShrinkingThem()
+        {
+            var from = lesson.steps[0].hands["right"].JointVectors();
+            var to = lesson.steps[1].hands["right"].JointVectors();
+            BendIndex(to, true, 80);  // a big curl: sliding joints in straight lines would shrink this finger
+            var halfway = GhostTransition.Pose(from, to, 0.5f, new Vector3[21]);
+            for (int i = 1; i < 21; i++)
+            {
+                int parent = HandConventions.Parent(i);
+                float expected = Mathf.Lerp((from[i] - from[parent]).magnitude, (to[i] - to[parent]).magnitude, 0.5f);
+                Assert.That((halfway[i] - halfway[parent]).magnitude, Is.EqualTo(expected).Within(1e-5f), "bone to joint " + i);
+            }
+            var start = GhostTransition.Pose(from, to, 0, new Vector3[21]);
+            var end = GhostTransition.Pose(from, to, 1, new Vector3[21]);
+            for (int i = 0; i < 21; i++)
+            {
+                Assert.That(Vector3.Distance(start[i], from[i]), Is.LessThan(1e-5f));
+                Assert.That(Vector3.Distance(end[i], to[i]), Is.LessThan(1e-5f));
+            }
+        }
+
+        [Test]
+        public void PracticeOnlyTracksOnceTheGhostLands()
+        {
+            WithTransitions();
+            flow.Tick(700);
+            Assert.That(flow.StepIndex, Is.EqualTo(1)); Assert.That(flow.TransitionMs, Is.EqualTo(600), "step 2 moves for 0.6 s");
+            source.Tracked = false;  // a hand dropping out while watching doesn't count
+            int statusUpdates = renderer.StatusUpdates;
+            flow.Tick(300);
+            Assert.That(flow.InTransition, Is.True);
+            Assert.That(flow.Progress.ElapsedMs, Is.Zero); Assert.That(flow.Progress.TrackingLosses, Is.Zero);
+            Assert.That(flow.HandMatches, Is.Empty);
+            Assert.That(renderer.StatusUpdates, Is.EqualTo(statusUpdates), "fingers aren't colored while the ghost moves");
+            source.Tracked = true;
+            flow.Tick(300);
+            Assert.That(flow.InTransition, Is.False);
+            Assert.That(flow.Progress.HeldMs, Is.Zero, "the hold starts after the transition");
+            flow.Tick(699); Assert.That(flow.StepIndex, Is.EqualTo(1));
+            flow.Tick(1); Assert.That(flow.StepIndex, Is.EqualTo(2));
+        }
+
+        [Test]
+        public void RecallDoesNotWaitForTransitions()
+        {
+            WithTransitions();
+            for (int i = 0; i < 100 && flow.State == LessonState.Practice; i++) flow.Tick(100);
+            Assert.That(flow.State, Is.EqualTo(LessonState.Recall));
+            flow.Tick(700);
+            Assert.That(flow.StepIndex, Is.EqualTo(1)); Assert.That(flow.InTransition, Is.False);
+        }
+
+        [Test]
+        public void RatingCombinesAccuracyTriesAndTime()
+        {
+            var p = new LessonPerformance();
+            p.AddPose(true, 0.9f, 0, 2000);
+            p.AddPose(true, 0.8f, 1, 2000);  // held at the second try
+            p.AddMotion(500);
+            p.AddTime(5000);                 // par is 4500
+            Assert.That(p.Accuracy, Is.EqualTo(0.85f).Within(1e-5f));
+            Assert.That(p.TimesTried, Is.EqualTo(3)); Assert.That(p.TriesScore, Is.EqualTo(2 / 3f).Within(1e-5f));
+            Assert.That(p.TimeScore, Is.EqualTo(0.9f).Within(1e-5f));
+            Assert.That(p.Rating, Is.EqualTo(8.2f).Within(1e-5f), "10 x (0.5 x 0.85 + 0.25 x 0.667 + 0.25 x 0.9) = 8.17");
+        }
+
+        [Test]
+        public void PerfectLessonScoresTenAndAFailedPoseScoresNoAccuracy()
+        {
+            var perfect = new LessonPerformance();
+            perfect.AddPose(true, 1, 0, 2200); perfect.AddTime(1800);
+            Assert.That(perfect.Rating, Is.EqualTo(10f));
+            var failed = new LessonPerformance();
+            failed.AddPose(false, 0.9f, 0, 2200); failed.AddTime(2200);
+            Assert.That(failed.Accuracy, Is.Zero); Assert.That(failed.Rating, Is.EqualTo(5f));
+        }
+
+        [Test]
+        public void ClosenessAndTimeFormat()
+        {
+            Assert.That(LessonPerformance.Closeness(0), Is.EqualTo(1f), "exactly on the pose");
+            Assert.That(LessonPerformance.Closeness(1), Is.EqualTo(0.5f), "at the edge of tolerance");
+            Assert.That(LessonPerformance.FormatTime(42300), Is.EqualTo("42.3 s"));
+            Assert.That(LessonPerformance.FormatTime(102000), Is.EqualTo("1:42"));
+        }
+
+        [Test]
+        public void FinishedLessonShowsItsPerformanceOnThePanel()
+        {
+            var panel = root.AddComponent<LessonPanel>();
+            for (int i = 0; i < 10; i++) flow.Tick(1000);  // 5 steps, twice: 4 holds and a motion each round
+            Assert.That(flow.State, Is.EqualTo(LessonState.Results));
+            var p = flow.Performance;
+            Assert.That(p.Poses, Is.EqualTo(8)); Assert.That(p.Retries, Is.Zero); Assert.That(p.TotalMs, Is.EqualTo(10000));
+            Assert.That(p.Accuracy, Is.InRange(0.8f, 1f), "the example's poses are within a few degrees of their targets");
+            Assert.That(p.TimeScore, Is.EqualTo(1f), "well under par");
+            panel.RefreshView();
+            Assert.That(panel.PerformanceView.gameObject.activeSelf, Is.True);
+            Assert.That(panel.RatingText, Does.Contain(p.Rating.ToString("0.0")));
+            Assert.That(panel.StatText(0), Is.EqualTo(Mathf.RoundToInt(100 * p.Accuracy) + "%"));
+            Assert.That(panel.StatText(1), Is.EqualTo("8"));
+            Assert.That(panel.StatText(2), Is.EqualTo("10.0 s"));
+        }
+
+        [Test]
+        public void LessonPanelPromptsTheStepAndShowsEachFinger()
+        {
+            var panel = root.AddComponent<LessonPanel>();
+            flow.Tick(100);
+            panel.RefreshView();
+            Assert.That(panel.StepText, Is.EqualTo("STEP 1 / 5"));
+            Assert.That(panel.InstructionText, Is.EqualTo(lesson.steps[0].instruction));
+            Assert.That(panel.StatusText, Is.EqualTo("Hold steady"));
+            Assert.That(panel.HoldText, Is.EqualTo("0.1 / 0.7 S"));
+            for (int i = 0; i < 5; i++) Assert.That(panel.FingerColor(i), Is.EqualTo(MenuStyle.Good), FingerMatcher.FingerNames[i]);
+            source.Incorrect = true;  // index bent 80 degrees off
+            for (int i = 0; i < 20; i++) flow.Tick(20);
+            panel.RefreshView();
+            Assert.That(panel.FingerColor(1), Is.EqualTo(MenuStyle.Bad), "index");
+            Assert.That(panel.FingerColor(2), Is.EqualTo(MenuStyle.Good), "middle");
+        }
+
+        [Test]
+        public void RetryButtonIsWithinReach()
+        {
+            var panel = root.AddComponent<LessonPanel>(); panel.RefreshView();
+            Assert.That(Vector3.Distance(panel.RetryButton.position, source.Head.position), Is.LessThan(0.6f));
+        }
+
+        [Test]
+        public void PokingRetryWithAFingertipPressesIt()
+        {
+            var panel = root.AddComponent<LessonPanel>(); panel.RefreshView();
+            var button = panel.RetryButton.GetComponent<UnityEngine.UI.Button>();
+            int presses = 0;
+            button.onClick.RemoveAllListeners(); button.onClick.AddListener(() => presses++);
+            PokeButton.ResetCooldown();
+            foreach (float millimetres in new[] { -100f, -50f, -20f, 5f, 10f })  // in front of the button, then through it
+            {
+                source.Fingertip = panel.RetryButton.TransformPoint(new Vector3(0, 0, millimetres));
+                panel.RefreshView();
+                panel.RetryButton.GetComponent<PokeButton>().Poke();  // LateUpdate, outside play mode
+            }
+            Assert.That(presses, Is.EqualTo(1));
+        }
+
+        private static readonly Rect Button = new Rect(-55, -25, 110, 50);
+
+        private static int Presses(PokeDetector poke, params Vector3[] path)
+        {
+            int presses = 0;
+            foreach (var tip in path) if (poke.Update(tip, Button)) presses++;
+            return presses;
+        }
+
+        [Test]
+        public void PushingThroughFromTheFrontPressesOnceUntilTheFingerPullsBack()
+        {
+            var poke = new PokeDetector();
+            Assert.That(Presses(poke, new Vector3(0, 0, -60), new Vector3(0, 0, -20), new Vector3(0, 0, 2), new Vector3(0, 0, 20)), Is.EqualTo(1));
+            Assert.That(Presses(poke, new Vector3(0, 0, -2), new Vector3(0, 0, 3)), Is.Zero, "a small wobble at the surface");
+            Assert.That(Presses(poke, new Vector3(0, 0, -30), new Vector3(0, 0, 1)), Is.EqualTo(1), "pulled back, pressed again");
+        }
+
+        [Test]
+        public void SlidingInFromTheSideOrPassingBehindDoesNotPress()
+        {
+            var poke = new PokeDetector();
+            Assert.That(Presses(poke, new Vector3(-200, 0, 10), new Vector3(-60, 0, 10), new Vector3(0, 0, 10)), Is.Zero);
+            Assert.That(Presses(poke, new Vector3(0, 0, 200), new Vector3(0, 0, 30)), Is.Zero);
+            Assert.That(Presses(poke, new Vector3(0, -200, -30), new Vector3(0, 0, 5)), Is.Zero, "the finger came from outside");
+        }
+
+        [Test]
+        public void HoveringMeansOverTheButtonAndCloseInFront()
+        {
+            var poke = new PokeDetector();
+            poke.Update(new Vector3(60, 0, -30), Button); Assert.That(poke.Hovering, Is.True, "within the 15 mm margin");
+            poke.Update(new Vector3(0, 0, -150), Button); Assert.That(poke.Hovering, Is.False, "too far in front");
+            poke.Update(new Vector3(100, 0, -30), Button); Assert.That(poke.Hovering, Is.False, "off to the side");
         }
     }
 }

@@ -16,6 +16,9 @@ namespace GhostHands
             XRHandJointID.LittleProximal, XRHandJointID.LittleIntermediate, XRHandJointID.LittleDistal, XRHandJointID.LittleTip
         };
 
+        // The joint each bone starts from. Every finger starts at the wrist: joints 1, 5, 9, 13 and 17.
+        public static int Parent(int joint) => (joint - 1) % 4 == 0 ? 0 : joint - 1;
+
         public static Quaternion HandFrame(Vector3[] p, bool isRight)
         {
             if (!ValidJoints(p)) throw new ArgumentException("Expected 21 finite, non-degenerate joints.");

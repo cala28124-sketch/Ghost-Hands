@@ -20,17 +20,29 @@ namespace GhostHands
             HandJointId.HandPinky1, HandJointId.HandPinky2, HandJointId.HandPinky3, HandJointId.HandPinkyTip
         };
 
+        private static bool Connected(MonoBehaviour component) => component != null && component is IHand hand && hand.IsConnected;
+
+        public string Describe(bool isRight)
+        {
+            var hand = (isRight ? rightHand : leftHand) as IHand;
+            if (hand == null) return "no IHand found";
+            return $"{((MonoBehaviour)hand).name} connected: {hand.IsConnected}, valid data: {hand.IsTrackedDataValid}";
+        }
+
         public bool TryGetJoints(bool isRight, out Vector3[] worldJoints21)
         {
             worldJoints21 = null;
-            if ((leftHand == null || rightHand == null) && Time.unscaledTime >= nextDiscovery)
+            // Rediscover while a hand is missing or disconnected: the scene has several IHands per side (e.g. a
+            // SyntheticHand for grab visuals), and the connected one is the real tracked hand.
+            if ((!Connected(leftHand) || !Connected(rightHand)) && Time.unscaledTime >= nextDiscovery)
             {
                 nextDiscovery = Time.unscaledTime + 1;
                 foreach (var component in FindObjectsByType<MonoBehaviour>())
                     if (component is IHand candidate)
                     {
-                        if (candidate.Handedness == Handedness.Right && rightHand == null) rightHand = component;
-                        if (candidate.Handedness == Handedness.Left && leftHand == null) leftHand = component;
+                        bool better = Connected(component);
+                        if (candidate.Handedness == Handedness.Right && (rightHand == null || better && !Connected(rightHand))) rightHand = component;
+                        if (candidate.Handedness == Handedness.Left && (leftHand == null || better && !Connected(leftHand))) leftHand = component;
                     }
             }
             var componentHand = isRight ? rightHand : leftHand;

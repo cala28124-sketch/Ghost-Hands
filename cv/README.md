@@ -44,9 +44,9 @@ python build_lesson.py --check out/clip.json        # same rules as the server
 python process.py clip.mp4 --post                   # all of the above in one go, then upload
 ```
 
-**Tuning keyframes:** open `out/<clip>.motion.png`. It plots each hand's speed, the stillness threshold (dashed), and the pauses that became steps (green). If the expert's holds aren't green, raise `--still-speed`. If moves are being split into extra steps, lower it. Pauses shorter than `--min-still-ms` (300) are ignored.
+**Tuning keyframes:** open `out/<clip>.motion.png`. It plots each hand's speed, the stillness threshold (dashed), and the pauses that became steps (green). The threshold adapts to the video: 0.10 m/s on a sharp video, raised above the tracking jitter on a blurry or low-resolution one (an iPhone shrinks videos picked from Photos to 480x360), up to 0.30. The command prints the value it used. If the expert's holds still aren't green, pass a fixed `--still-speed` (higher finds more pauses). If moves are being split into extra steps, pass a lower one. Pauses shorter than `--min-still-ms` (300) are ignored.
 
-**Recording the expert:** 10–30 s, bright light, both hands in frame the whole time, and **hold each pose still for about half a second**. Film from the expert's point of view (phone at head or chest height, looking down at the hands). `wristRotation` is measured relative to the camera, so a camera facing the expert, or off to the side, makes the ghost turn the wrong way in the headset.
+**Recording the expert:** 10–30 s, bright light, both hands in frame the whole time, and **hold each pose still for about half a second**. Film either from the expert's point of view (phone at head or chest height) or with the phone propped up facing them: the pipeline works out which from where the hands are in the picture (`ghosthands/viewpoint.py`: facing the expert, their right hand appears on the picture's left) and turns `wristRotation` into the expert's own view, so the ghost never comes out turned around. It prints what it decided and why (`camera: facing the expert (detected: ...)`). To override: `--camera pov|facing`, saved in the keyframes file. It can't see how far the camera looked down (`--camera-pitch 45` for a phone at the chest), or a selfie-mirrored video (turn "Mirror Front Camera" off, or use the back camera); a camera off to the side isn't handled.
 
 ## Code
 
@@ -59,6 +59,7 @@ python process.py clip.mp4 --post                   # all of the above in one go
 | `ghosthands/handpose.py` | MediaPipe world landmarks → schema hand: `joints`, `wristRotation`, `targetAngles` |
 | `ghosthands/keyframes.py` | Hand speed, pause detection, automatic keyframes, the keyframes file |
 | `ghosthands/lesson.py` | Builds the lesson; `validate_lesson` (the shared schema, plus the checks in `web/validate.js` and a few more) |
+| `ghosthands/replay.py`, `export_replay.py` | Lesson + tracked hands in Unity axes, for Unity's end-to-end test (`EndToEndReplayTests`) |
 | `ghosthands/review.py` | Annotated video, contact sheets, motion graph |
 | `ghosthands/pipeline.py` | Chains the steps; shared by `build_lesson.py` and `process.py` |
 | `ghosthands/server.py` | Client for `web/server.js` (only needs the server address) |
@@ -68,11 +69,11 @@ python process.py clip.mp4 --post                   # all of the above in one go
 
 - **Axes:** Unity's: x right, y up, z forward. MediaPipe's y points down, so it's flipped.
 - **`joints`:** 21 points in MediaPipe order, in meters, in the **hand's own frame**: wrist at `[0,0,0]`, fingers along +z, back of the hand +y (palm facing −y). A right hand's thumb is on −x; the left hand is a mirror image. Hand frame axes: forward = wrist → middle knuckle; right = across the knuckles (index → pinky on a right hand); up = forward × right.
-- **`wristRotation`:** Unity quaternion `[x, y, z, w]` that turns the hand frame into the camera's frame. To draw the ghost: `position = wristAnchor + rotation * joint`.
+- **`wristRotation`:** Unity quaternion `[x, y, z, w]` that turns the hand frame into the expert's own view (head level, looking ahead), whichever way the camera faced. To draw the ghost: `position = wristAnchor + rotation * joint`.
 - **`targetAngles`:** the bend at each joint in degrees, 0 = straight: the angle between the two bones that meet there, ordered knuckle to fingertip.
   - index/middle/ring/pinky: `[MCP, PIP, DIP]`, measured at landmarks 5-6-7 (index), and so on. The MCP bend uses the wrist → knuckle bone. **Positive = toward the palm**, negative = bent backwards.
   - thumb: `[MCP, IP]` at landmarks 2 and 3, always positive.
   - The matcher has to compute the learner's angles the same way. See `bend_angles` in `ghosthands/handpose.py`.
 - **Hands in the lesson:** the hands seen in at least 30% of frames, so a brief mislabel doesn't add a hand. One-handed clips give one-handed lessons.
-- **Keyframes:** a step is a pause where every hand in the lesson moves slower than 0.10 m/s (median of 5 frames) for at least 300 ms. The pose is the median of up to 15 frames from the middle of the pause. Consecutive pauses within 10° of each other (fingers and wrist) count as one step. `durationMs` is the time between the end of one pause and the start of the next (800 for the first step). `holdMs` defaults to 700.
+- **Keyframes:** a step is a pause where every hand in the lesson moves slower than the stillness threshold (median of 5 frames) for at least 300 ms. The threshold is 0.10 m/s, or 1.5x the video's jitter (its slowest 10% of frames) if that's higher, capped at 0.30. The pose is the median of up to 15 frames from the middle of the pause. Consecutive pauses within 10° of each other (fingers and wrist) count as one step. `durationMs` is the time between the end of one pause and the start of the next (800 for the first step). `holdMs` defaults to 700.
 - **IDs:** a server video gets `lessonId` = `<file-name>-<videoId>` (e.g. `cube-demo-3`), so re-uploading a file never overwrites an older lesson. A local clip uses just the file name.

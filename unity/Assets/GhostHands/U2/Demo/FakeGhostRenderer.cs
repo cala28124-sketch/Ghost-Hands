@@ -8,8 +8,9 @@ namespace GhostHands
         public bool Visible;
         public bool Hidden;
         public int ShownSteps;
+        public int StatusUpdates;
         public void ShowStep(LessonStep previous, LessonStep next) { ShownSteps++; }
-        public void SetFingerStatus(string finger, FingerStatus status) { }
+        public void SetFingerStatus(string finger, FingerStatus status) { StatusUpdates++; }
         public void SetVisible(bool value) { Visible = value; if (value) Hidden = false; }
         public void Hide() { Hidden = true; Visible = false; }
     }

@@ -4,7 +4,9 @@ Conventions (documented in shared/lessons/README.md):
   - Unity axes: x right, y up, z forward (away from the viewer).
   - joints: 21 points in the hand's own frame, in meters. Wrist at the origin, palm facing -y,
     fingers along +z. A right hand's thumb is on -x; a left hand is a right hand mirrored across x.
-  - wristRotation: Unity quaternion [x, y, z, w] that turns the hand frame into the viewer's (camera's) frame.
+  - wristRotation: Unity quaternion [x, y, z, w] that turns the hand frame into the learner's view: what the expert
+    would see with their head level, looking straight ahead. A Camera says how the video's camera differs from that
+    (looking down at the hands, or facing the expert); without one the camera is taken as that view.
   - targetAngles: bend at each joint in degrees, 0 = straight, ordered knuckle to fingertip.
       index/middle/ring/pinky: [MCP, PIP, DIP]; positive bends toward the palm, negative is hyperextension.
       thumb: [MCP, IP], unsigned (its hinge isn't aligned with the hand's x axis).
@@ -12,6 +14,7 @@ Conventions (documented in shared/lessons/README.md):
     The matcher must compute live angles the same way.
 """
 
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
@@ -19,6 +22,31 @@ import numpy as np
 from ghosthands.landmarks import Side
 
 WRIST, INDEX_MCP, MIDDLE_MCP, PINKY_MCP = 0, 5, 9, 17
+
+
+@dataclass(frozen=True)
+class Camera:
+    """How the video's camera was placed, to turn what it saw into the learner's view (head level, looking ahead).
+
+    facing: the camera faced the expert (a phone propped up in front of them), so it saw the hands from the
+        other side; they're turned around to the expert's own view. False: filmed from the expert's point of view.
+    pitch_degrees: how far the camera looked down. A phone at the chest looking down at the hands: about 45.
+    """
+
+    facing: bool = False
+    pitch_degrees: float = 0.0
+
+    def to_learner(self) -> np.ndarray:
+        """3x3 rotation: camera axes -> the learner's view (both in Unity axes)."""
+        a = np.radians(self.pitch_degrees)
+        # Undo the tilt: the camera's forward (0, 0, 1) was really (0, -sin a, cos a), pointing down by a.
+        level = np.array([[1, 0, 0], [0, np.cos(a), -np.sin(a)], [0, np.sin(a), np.cos(a)]])
+        # Turn around (180 degrees about the vertical): what faced the camera faces away from the learner.
+        turn = np.diag([-1.0, 1.0, -1.0]) if self.facing else np.eye(3)
+        return turn @ level
+
+
+DEFAULT_CAMERA = Camera()
 
 # Landmark chains, wrist side first. Angles are measured at each interior landmark.
 FINGER_CHAINS = {
@@ -82,9 +110,9 @@ def bend_angles(local: np.ndarray, chain: tuple[int, ...], signed: bool) -> list
     return angles
 
 
-def lesson_hand(world: np.ndarray, side: Side) -> dict[str, Any]:
-    """One hand's MediaPipe world landmarks -> the schema's hand object."""
-    points = to_unity_axes(world)
+def lesson_hand(world: np.ndarray, side: Side, camera: Camera = DEFAULT_CAMERA) -> dict[str, Any]:
+    """One hand's MediaPipe world landmarks -> the schema's hand object. Only wristRotation depends on the camera."""
+    points = to_unity_axes(world) @ camera.to_learner().T
     points = points - points[WRIST]
     rotation = hand_frame(points, side)
     local = points @ rotation  # each point expressed in the hand's own axes

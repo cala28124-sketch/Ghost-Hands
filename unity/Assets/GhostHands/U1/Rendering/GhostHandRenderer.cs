@@ -29,7 +29,7 @@ namespace GhostHands
             public readonly Transform[] Bones = new Transform[20];
             public readonly Renderer[] JointRenderers = new Renderer[21];
             public readonly Renderer[] BoneRenderers = new Renderer[20];
-            public readonly Vector3[] From = new Vector3[21], To = new Vector3[21], Current = new Vector3[21];
+            public readonly Vector3[] From = new Vector3[21], To = new Vector3[21], Current = new Vector3[21], Fitted = new Vector3[21];
             public Quaternion FromRotation, ToRotation, Rotation;
             public Vector3 Anchor;
             public float Elapsed, Duration;
@@ -83,7 +83,10 @@ namespace GhostHands
             RefreshPose(0);
         }
 
-        public void ShowStep(LessonStep previous, LessonStep next)
+        public void ShowStep(LessonStep previous, LessonStep next) => ShowStep(previous, next, GhostTransition.Seconds(previous, next));
+
+        // LessonFlow passes the transition length so the ghost lands exactly when tracking starts.
+        public void ShowStep(LessonStep previous, LessonStep next, float transitionSeconds)
         {
             Initialize();
             if (next == null) { Hide(); return; }
@@ -96,7 +99,7 @@ namespace GhostHands
                 { visual.Active = false; visual.Root.SetActive(false); continue; }
                 LessonHand from = null;
                 if (previous != null) previous.hands.TryGetValue(key, out from);
-                Configure(visual, from, target, next.durationMs / 1000f);
+                Configure(visual, from, target, transitionSeconds);
             }
             // Each new step starts cyan until the matcher supplies feedback.
             for (int i = 0; i < colors.Length; i++) colors[i] = new Color(0.55f, 0.95f, 1, 0.35f);
@@ -166,17 +169,16 @@ namespace GhostHands
                 h.Root.SetActive(visible && h.Active && isActiveAndEnabled);
                 if (!h.Active) continue;
                 h.Elapsed += deltaSeconds;
-                float blend = h.Duration <= 0 ? 1 : Mathf.Clamp01(h.Elapsed / h.Duration);
-                for (int i = 0; i < 21; i++) h.Current[i] = Vector3.Lerp(h.From[i], h.To[i], blend);
+                float blend = GhostTransition.Ease(h.Duration <= 0 ? 1 : h.Elapsed / h.Duration);
+                GhostTransition.Pose(h.From, h.To, blend, h.Current);
                 h.Rotation = Quaternion.Slerp(h.FromRotation, h.ToRotation, blend);
                 Vector3[] live = null;
                 bool tracked = source != null && source.TryGetJoints(side == 1, out live) && HandConventions.ValidJoints(live);
-                var anchor = tracked ? live[0] : viewer.position + yaw * new Vector3(0, -0.15f, 0.35f);
-                float scale = tracked && h.Current[9].magnitude > 0.0001f ?
-                    Mathf.Clamp(Vector3.Distance(live[9], live[0]) / h.Current[9].magnitude, 0.7f, 1.4f) : 1;
+                var anchor = tracked ? live[0] : FallbackAnchor(viewer, side == 1);
+                var pose = tracked ? FitToHand(h.Current, live, h.Fitted) : h.Current;
                 h.Anchor = h.Anchored ? Vector3.Lerp(h.Anchor, anchor, 1 - Mathf.Exp(-anchorSmoothing * deltaSeconds)) : anchor;
                 h.Anchored = true;
-                for (int i = 0; i < 21; i++) h.Joints[i].position = h.Anchor + yaw * (h.Rotation * h.Current[i] * scale);
+                for (int i = 0; i < 21; i++) h.Joints[i].position = h.Anchor + yaw * (h.Rotation * pose[i]);
                 SetColor(h.JointRenderers[0], new Color(0.55f, 0.95f, 1, 0.35f), properties);
                 for (int finger = 0; finger < 5; finger++)
                 {
@@ -196,6 +198,23 @@ namespace GhostHands
                 }
             }
         }
+
+        // The lesson's pose on the learner's own hand: every bone points where the expert's does, but is as long as
+        // the learner's. So the ghost lines up with their fingers whatever their hand size or proportions.
+        public static Vector3[] FitToHand(Vector3[] pose, Vector3[] live, Vector3[] result)
+        {
+            result[0] = pose[0];
+            for (int i = 1; i < 21; i++)
+            {
+                int parent = HandConventions.Parent(i);
+                result[i] = result[parent] + (pose[i] - pose[parent]).normalized * Vector3.Distance(live[i], live[parent]);
+            }
+            return result;
+        }
+
+        // Without tracking: 0.35 m ahead, 0.15 m down, and each hand 0.12 m to its side so the two don't overlap.
+        public static Vector3 FallbackAnchor(Transform viewer, bool isRight) =>
+            viewer.position + Quaternion.Euler(0, viewer.eulerAngles.y, 0) * new Vector3(isRight ? 0.12f : -0.12f, -0.15f, 0.35f);
 
         private static void SetColor(Renderer renderer, Color color, MaterialPropertyBlock properties)
         { properties.SetColor(BaseColor, color); renderer.SetPropertyBlock(properties); }

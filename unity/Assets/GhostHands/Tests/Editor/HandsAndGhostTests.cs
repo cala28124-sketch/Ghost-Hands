@@ -23,6 +23,7 @@ namespace GhostHands
             head = new GameObject("Test Head").transform; head.SetParent(root.transform, false);
             head.position = new Vector3(1, 2, 3); head.rotation = Quaternion.Euler(20, 60, 10);
             flow = root.AddComponent<LessonFlow>(); flow.autoStart = false; flow.submitResults = false;
+            flow.minTransitionSeconds = flow.maxTransitionSeconds = 0;  // these tests time the holds; transitions have their own
             replay = root.AddComponent<ReplayJointSource>(); replay.flow = flow;
             ghost = root.AddComponent<GhostHandRenderer>(); ghost.head = head; ghost.handJointSource = replay;
             flow.handJointSource = replay; flow.ghostHandRenderer = ghost;
@@ -101,24 +102,30 @@ namespace GhostHands
             ghost.Show(target, true); ghost.RefreshPose(0);
             replay.TryGetJoints(true, out var live);
             var yaw = Quaternion.Euler(0, head.eulerAngles.y, 0);
-            float scale = Mathf.Clamp(Vector3.Distance(live[9], live[0]) / target.JointVectors()[9].magnitude, 0.7f, 1.4f);
-            var expected = live[0] + yaw * (target.Rotation() * target.JointVectors()[8] * scale);
+            var fitted = GhostHandRenderer.FitToHand(target.JointVectors(), live, new Vector3[21]);
+            var expected = live[0] + yaw * (target.Rotation() * fitted[8]);
             Assert.That(Vector3.Distance(ghost.JointPosition(true, 8), expected), Is.LessThan(1e-5f));
         }
 
-        [Test]
-        public void GhostScaleClampsToSupportedHandSizes()
+        [TestCase(2f)]
+        [TestCase(0.5f)]
+        [TestCase(0.3f)]
+        public void GhostTakesTheLearnersBoneLengthsAndTheLessonsPose(float handSize)
         {
             var target = JsonConvert.DeserializeObject<LessonHand>(JsonConvert.SerializeObject(lesson.steps[0].hands["right"]));
             var liveHand = lesson.steps[0].hands["right"];
-            foreach (var p in liveHand.joints) for (int axis = 0; axis < 3; axis++) p[axis] *= 2;
+            foreach (var p in liveHand.joints) for (int axis = 0; axis < 3; axis++) p[axis] *= handSize;
             ghost.Show(target, true); ghost.RefreshPose(0);
-            Assert.That(Vector3.Distance(ghost.JointPosition(true, 8), ghost.JointPosition(true, 0)),
-                Is.EqualTo(target.JointVectors()[8].magnitude * 1.4f).Within(1e-5f));
-            foreach (var p in liveHand.joints) for (int axis = 0; axis < 3; axis++) p[axis] *= 0.25f;
-            ghost.RefreshPose(0);
-            Assert.That(Vector3.Distance(ghost.JointPosition(true, 8), ghost.JointPosition(true, 0)),
-                Is.EqualTo(target.JointVectors()[8].magnitude * 0.7f).Within(1e-5f));
+            replay.TryGetJoints(true, out var live);
+            var pose = target.JointVectors();
+            var turn = Quaternion.Euler(0, head.eulerAngles.y, 0) * target.Rotation();
+            for (int i = 1; i < 21; i++)
+            {
+                int parent = HandConventions.Parent(i);
+                var bone = ghost.JointPosition(true, i) - ghost.JointPosition(true, parent);
+                Assert.That(bone.magnitude, Is.EqualTo(Vector3.Distance(live[i], live[parent])).Within(1e-5f), "length of bone to joint " + i);
+                Assert.That(Vector3.Angle(bone, turn * (pose[i] - pose[parent])), Is.LessThan(0.01f), "direction of bone to joint " + i);
+            }
         }
 
         [Test]
@@ -126,8 +133,10 @@ namespace GhostHands
         {
             replay.tracked = false;
             ghost.RefreshPose(10);
-            var expected = head.position + Quaternion.Euler(0, head.eulerAngles.y, 0) * new Vector3(0, -0.15f, 0.35f);
+            var expected = head.position + Quaternion.Euler(0, head.eulerAngles.y, 0) * new Vector3(0.12f, -0.15f, 0.35f);
             Assert.That(Vector3.Distance(ghost.JointPosition(true, 0), expected), Is.LessThan(1e-5f));
+            Assert.That(Vector3.Distance(ghost.JointPosition(false, 0), ghost.JointPosition(true, 0)), Is.EqualTo(0.24f).Within(1e-4f),
+                "untracked ghosts sit side by side, not on top of each other");
             var bone = ghost.transform.Find("Right Ghost Hand/Bone 4").GetComponent<Renderer>();
             var properties = new MaterialPropertyBlock(); bone.GetPropertyBlock(properties);
             Assert.That(properties.GetColor("_BaseColor"), Is.EqualTo(GhostHandRenderer.StatusColor(FingerStatus.Unavailable)));
@@ -159,14 +168,27 @@ namespace GhostHands
         public void PassTransitionInterpolatesAndHidesMissingHand()
         {
             ghost.ShowStep(lesson.steps[1], lesson.steps[2]); ghost.SetVisible(true);
-            float half = lesson.steps[2].durationMs / 2000f;
+            float half = lesson.steps[2].durationMs / 2000f;  // a pass step's transition is its whole duration
             ghost.RefreshPose(half);
             Assert.That(ghost.HandVisible(false), Is.False); Assert.That(ghost.HandVisible(true), Is.True);
             replay.TryGetJoints(true, out var live);
             var a = lesson.steps[1].hands["right"]; var b = lesson.steps[2].hands["right"];
-            var point = Vector3.Lerp(a.JointVectors()[8], b.JointVectors()[8], 0.5f);
+            var pose = GhostTransition.Pose(a.JointVectors(), b.JointVectors(), 0.5f, new Vector3[21]);  // eased halfway is halfway
+            var point = GhostHandRenderer.FitToHand(pose, live, new Vector3[21])[8];
             var rotation = Quaternion.Slerp(a.Rotation(), b.Rotation(), 0.5f);
             var expected = live[0] + Quaternion.Euler(0, head.eulerAngles.y, 0) * (rotation * point);
+            Assert.That(Vector3.Distance(ghost.JointPosition(true, 8), expected), Is.LessThan(1e-5f));
+        }
+
+        [Test]
+        public void TransitionLandsExactlyOnTheNextPose()
+        {
+            ghost.ShowStep(lesson.steps[0], lesson.steps[1], 0.8f); ghost.SetVisible(true);
+            ghost.RefreshPose(0.8f);
+            replay.TryGetJoints(true, out var live);
+            var b = lesson.steps[1].hands["right"];
+            var point = GhostHandRenderer.FitToHand(b.JointVectors(), live, new Vector3[21])[8];
+            var expected = live[0] + Quaternion.Euler(0, head.eulerAngles.y, 0) * (b.Rotation() * point);
             Assert.That(Vector3.Distance(ghost.JointPosition(true, 8), expected), Is.LessThan(1e-5f));
         }
 

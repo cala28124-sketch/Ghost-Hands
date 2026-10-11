@@ -1,11 +1,14 @@
 import numpy as np
 import pytest
-from conftest import make_hand, make_tracking, mock_joints, rotation_z
+from conftest import HEIGHT, PIXELS_PER_METER, WIDTH, make_hand, make_tracking, mock_joints, rotation_z
 
+from ghosthands.handpose import Camera
 from ghosthands.keyframes import (
+    MAX_STILL_SPEED,
     Keyframe,
     KeyframeSettings,
     KeyframesFile,
+    adapt_to_video,
     auto_keyframes,
     find_pauses,
     hand_speeds,
@@ -15,6 +18,7 @@ from ghosthands.keyframes import (
     rolling_median,
     save_keyframes,
 )
+from ghosthands.landmarks import Hand
 
 FPS = 30
 
@@ -130,3 +134,48 @@ def test_keyframe_frames_from_time_only_or_frame():
     assert keyframe_frames(tracking, Keyframe("x", frame=1)) == (1, 0, 4)       # window clipped at the start
     assert keyframe_frames(tracking, Keyframe("x", frame=99)) == (29, 26, 29)   # frame past the end
     assert keyframe_frames(tracking, Keyframe("x", frame=10, pose_frames=(5, 20))) == (10, 5, 20)
+
+
+def jittery(frames, meters=0.0005, seed=0):
+    """The same hands with tracking jitter: 0.5 mm per landmark per frame reads as ~0.12 m/s, like a 480x360 upload."""
+    rng = np.random.default_rng(seed)
+    pixels = meters * PIXELS_PER_METER / np.array([WIDTH, HEIGHT, PIXELS_PER_METER])  # image coords are 0..1
+    return [
+        [Hand(h.side, h.score, h.image + rng.normal(0, 1, h.image.shape) * pixels,
+              h.world + rng.normal(0, meters, h.world.shape)) for h in hands]
+        for hands in frames
+    ]
+
+
+def two_poses():
+    return hold(1.0) + move(0.4, 0, 90) + hold(1.0, turn_degrees=90)
+
+
+def test_a_sharp_video_keeps_the_default_stillness():
+    assert adapt_to_video(make_tracking(two_poses(), FPS)).still_speed == KeyframeSettings().still_speed
+
+
+def test_a_jittery_video_raises_the_stillness_threshold_and_still_finds_the_poses():
+    tracking = make_tracking(jittery(two_poses()), FPS)
+    assert auto_keyframes(tracking) == []  # the fixed 0.10 m/s: jitter alone is faster than that
+
+    settings = adapt_to_video(tracking)
+    assert KeyframeSettings().still_speed < settings.still_speed < MAX_STILL_SPEED
+    assert len(auto_keyframes(tracking, settings)) == 2
+
+
+def test_a_fixed_still_speed_is_not_adapted():
+    tracking = make_tracking(jittery(two_poses()), FPS)
+    fixed = KeyframeSettings(still_speed=0.12, adaptive=False)
+    assert adapt_to_video(tracking, fixed) == fixed
+
+
+def test_a_video_that_never_stops_is_capped():
+    frames = move(1.0, 0, 360) + move(1.0, 360, 0)  # always turning, ~0.6 m/s at the fingertips
+    assert adapt_to_video(make_tracking(frames, FPS)).still_speed == MAX_STILL_SPEED
+
+
+def test_the_keyframes_file_remembers_the_camera(tmp_path):
+    kf_file = KeyframesFile("demo", "Demo", [Keyframe("Hold", frame=3)], Camera(facing=True, pitch_degrees=30))
+    save_keyframes(kf_file, tmp_path / "k.json")
+    assert load_keyframes(tmp_path / "k.json").camera == Camera(facing=True, pitch_degrees=30)
